@@ -1,0 +1,57 @@
+[
+  {
+    "index": 34,
+    "file": "tests/test_priority_repair_20260627.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.37,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_priority_repair_20260627.py.log"
+  },
+  {
+    "index": 35,
+    "file": "tests/test_projection_integrity_20260627.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 4.5,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_projection_integrity_20260627.py.log"
+  },
+  {
+    "index": 36,
+    "file": "tests/test_repair_20260628.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 5.674,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_repair_20260628.py.log"
+  },
+  {
+    "index": 37,
+    "file": "tests/test_requested_acceptance_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 7.161,
+    "passed": 18,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_requested_acceptance_20260626.py.log"
+  },
+  {
+    "index": 38,
+    "file": "tests/test_secondary_symbol_shared_sentiment.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.763,
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_secondary_symbol_shared_sentiment.py.log"
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "index": 7,
+    "file": "tests/test_arert_thesis_repair_20260628.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 10.341,
+    "passed": 15,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_arert_thesis_repair_20260628.py.log"
+  },
+  {
+    "index": 8,
+    "file": "tests/test_combined_display_consistency_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.79,
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_combined_display_consistency_20260626.py.log"
+  }
+]

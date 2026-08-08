@@ -1,0 +1,14 @@
+Commands run:
+
+python -m py_compile core/system_contract.py core/background_function_registry.py core/field10_research_migration_20260709.py core/field10_unified_authority_20260709.py ui/color_system.py ui/mobile_export_panel.py core/view_model_sync.py exports/export_builder.py observability/system_health.py core/run_saga.py core/background_orchestrator.py core/current_result_sync_20260708.py ui/lunch_field10_multi_symbol_20260701.py tabs/field456789_page_20260626.py tabs/antd_page_router_20260615.py app.py adx_dashpoard.py
+
+Result: PASS
+
+pytest -q tests/test_field10_authority_20260709.py tests/test_mobile_export_panel_20260709.py
+
+Result:
+......                                                                   [100%]
+6 passed in 0.25s
+
+Notes:
+- Full Streamlit runtime smoke import could not be executed in this container because `streamlit` is not installed in the local execution environment. The project `requirements.txt` includes `streamlit>=1.35,<2`, so Streamlit Cloud/normal deployment will install it.

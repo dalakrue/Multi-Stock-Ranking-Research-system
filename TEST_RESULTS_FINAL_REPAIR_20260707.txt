@@ -1,0 +1,46 @@
+ADX QUANT PRO FINAL REPAIR TEST RESULTS — 2026-07-07
+
+1. Compile validation
+Command:
+  python -m compileall -q app.py adx_dashpoard.py core ui tabs services research_quant tests
+Result:
+  PASS — COMPILE_ALL_OK
+
+2. Targeted regression suite
+Covered:
+  - explicit load-first selector workflow
+  - exact-symbol/timeframe cache identity
+  - instant calculation engine
+  - full multi-symbol repair contracts
+  - Field 3 / Field 10 symbol synchronization
+  - H4 auto-connect and quota-safe behavior
+  - three-selector cumulative behavior
+  - final strict completion, Power BI, and restored Field 10 tests
+Result:
+  PASS — 42 passed in 1.77s
+
+3. New final-repair test file
+Result:
+  PASS — 6 passed
+
+4. Database migration
+Result:
+  PASS
+  schema_version = 2026070701
+  migration = load_first_strict_completion_publication_repair_20260707
+  multi_symbol_completion_audit_20260706 = present
+  field10_latest_run_result_20260706 = present
+
+5. SQLite integrity
+Result:
+  PASS — PRAGMA integrity_check = ok
+
+6. Full historical test collection
+Result:
+  ENVIRONMENT BLOCKED — not counted as an application failure.
+  The repair container does not have the Streamlit package installed. Five historical UI test modules stopped during import collection with ModuleNotFoundError: streamlit. Targeted tests used pure logic or a local minimal UI import stub.
+
+7. Live provider validation
+Result:
+  NOT CLAIMED.
+  No live API credentials were used. Provider availability, quota, symbol support, and credential validity must be tested in the deployment environment. The repaired code now reports these failures precisely and does not fabricate data.

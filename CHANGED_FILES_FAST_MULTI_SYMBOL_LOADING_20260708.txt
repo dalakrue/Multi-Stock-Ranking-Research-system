@@ -1,0 +1,28 @@
+core/data/market_data_orchestrator.py
+- Added correct Finnhub forex/crypto/stock endpoint routing.
+- Added Finnhub provider aliases for common metals and crypto symbols.
+- Replaced invalid direct H4 resolution=240 with H1 resolution=60 plus exact OHLCV H4 aggregation.
+- Added optional run-scoped disabled-provider support.
+
+core/data/multi_symbol_scheduler.py
+- Prevented automatic Twelve Data 60-second pacing during Finnhub-primary loads.
+- Preserved explicitly requested Twelve Data pacing.
+- Added provider circuit breaking for repeated provider-wide failures.
+- Added backward compatibility with custom orchestrators using the prior fetch signature.
+- Added completed/total symbol, elapsed-time, pacing-provider, and disabled-provider telemetry.
+
+core/multi_symbol_load_manager_20260707.py
+- Added total load duration and seconds-per-symbol telemetry.
+- Added structured failure records when market-data preparation raises.
+- Enabled full-range load progress reporting.
+
+ui/multi_symbol_settings_20260701.py
+- Added live completed/total symbol and elapsed-time status.
+- Added Last Load Time metric for every multi-symbol selector.
+
+tests/test_fast_multi_symbol_loading_20260708.py
+- Added five focused regressions for H4, endpoint routing, no Finnhub quota wait, circuit breaking, and structured load failure.
+
+FIX_REPORT_FAST_MULTI_SYMBOL_LOADING_20260708.md
+TEST_RESULTS_FAST_MULTI_SYMBOL_LOADING_20260708.txt
+CHANGED_FILES_FAST_MULTI_SYMBOL_LOADING_20260708.txt

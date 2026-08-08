@@ -1,0 +1,111 @@
+{
+  "strategy": "flattened exact preserved SOURCE_LINES for non-protected wrappers",
+  "flattened_module_count": 20,
+  "flattened_modules": [
+    {
+      "file": "core/advanced_analytics_20260615.py",
+      "sha256": "4247124c3ddbb9bfe56b6ddca9a0da378600f5d8ab558100b8f3b599e7bf942f",
+      "bytes": 28489
+    },
+    {
+      "file": "core/advanced_reliability_shift_20260620.py",
+      "sha256": "59237656bbac2415be1680bcc565820a34ae6b7246d5f142f605d4ef44f3468d",
+      "bytes": 89843
+    },
+    {
+      "file": "core/adx_shared_sync_20260615.py",
+      "sha256": "606fa82748c6be3cf0e0e1a4aed1fa5dd784065fafc5afc9022ecd60bc6a4e34",
+      "bytes": 48371
+    },
+    {
+      "file": "core/causal_quant_support_20260618.py",
+      "sha256": "fe7130188e66fed04271f12c5ad06920e52b876a2d5dd5aa24ebcff51ab28fde",
+      "bytes": 66247
+    },
+    {
+      "file": "core/finnhub_connector.py",
+      "sha256": "f734f8ab2cc73988c903a754fecf0bc37fdf3e53b97cfc5e0a087d6889f40599",
+      "bytes": 29619
+    },
+    {
+      "file": "core/lunch_broker_sentiment_ai_history_20260622.py",
+      "sha256": "eff67f9e3de2ae08a666695edd7b269609235d35869e1c257d21960e7a99fb10",
+      "bytes": 62552
+    },
+    {
+      "file": "core/multiscale_probabilistic_upgrade_20260618.py",
+      "sha256": "939d5f4a393fa1e11ad75479ae643a17c8a117ab365790fe67ef67cf96f71df5",
+      "bytes": 64619
+    },
+    {
+      "file": "core/powerbi_path_calibration_20260617.py",
+      "sha256": "6a218a1ba7cbb8d3ac6d4ddeefc6ee01dbf174c45d74c8656169d2e0529a7730",
+      "bytes": 38363
+    },
+    {
+      "file": "core/prediction_ledger_20260617.py",
+      "sha256": "aa848ae6d03d9dc1d1478cc874b1e3f60ef8620288703e9fe896c47ccd0402c3",
+      "bytes": 34467
+    },
+    {
+      "file": "core/regime_sync_20260617.py",
+      "sha256": "3ff5528707668c6d95c50761675fc325de8da5e7c505b89db29f4a397a9fdb71",
+      "bytes": 40973
+    },
+    {
+      "file": "core/regime_transition_trust_20260621.py",
+      "sha256": "52f64633406e6a171b61a85d16d28d02da4ed98e212884077eb44eaff61bbb39",
+      "bytes": 40100
+    },
+    {
+      "file": "core/research_calibration_20260618.py",
+      "sha256": "f777504ca9033e692cafdb578e082bb74c32c5cffb78d750eac01dda0bf786ab",
+      "bytes": 111462
+    },
+    {
+      "file": "core/research_risk_stack_20260619.py",
+      "sha256": "b35e223926e961777f6bb74298b9efabe569807ca9e6d1ac482940590f355ecd",
+      "bytes": 82607
+    },
+    {
+      "file": "core/settings_run_orchestrator_20260617.py",
+      "sha256": "8a1ac110915beacb0c4526f60f0b070e4cb3d9961e577b7a9dd94ed355b81ec1",
+      "bytes": 112618
+    },
+    {
+      "file": "core/shared_broker_time_20260622.py",
+      "sha256": "0d4de98e8f8a47f50612c93962a848238fe2a1916f1b9a6457262855586ac4d6",
+      "bytes": 32649
+    },
+    {
+      "file": "core/similar_day_intelligence_20260619.py",
+      "sha256": "6d2b1e44af75259b597d5762ee5acd8f52061dcdfc0d7f6366108b959c444f72",
+      "bytes": 86489
+    },
+    {
+      "file": "core/tail_density_research_20260622.py",
+      "sha256": "899902c372aa95233ee93a1cc78910801b311a1b9d995abded6ab658ac3bd1ae",
+      "bytes": 39218
+    },
+    {
+      "file": "core/ten_paper_research_layers_20260621.py",
+      "sha256": "e1e3e3a38a73b6b2852abd8b72d4c91f533ca95fe114d59174f2bfec4147941a",
+      "bytes": 83920
+    },
+    {
+      "file": "core/trust_history_20260619.py",
+      "sha256": "5420ae6bdddc21a4bd364ba297afdebad7fcda632cb7f51dc37537dd9fa9bf81",
+      "bytes": 53687
+    },
+    {
+      "file": "core/ui/legacy_impl/styles_impl.py",
+      "sha256": "23e5344d016222bc820e44d5313a3c727c7b171f272553de38a265b5d8f28a9e",
+      "bytes": 60144
+    }
+  ],
+  "protected_modules_preserved": [
+    "core/canonical_runtime_20260617.py",
+    "core/decision_product_engine_20260617.py"
+  ],
+  "canonical_standalone_fallback": "core/canonical_runtime_20260617_standalone.py"
+}

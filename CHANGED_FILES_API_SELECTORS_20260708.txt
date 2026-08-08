@@ -1,0 +1,15 @@
+core/app/refresh.py
+core/complete_repair_20260705.py
+core/connector_state_machine_20260621.py
+core/data/market_data_orchestrator.py
+core/multi_symbol_load_manager_20260707.py
+core/normalized_multi_symbol_migration_20260707.py
+ui/multi_symbol_settings_20260701.py
+ui/provider_health_panel_20260705.py
+ui/sidebar_fallback_panel.py
+tests/test_api_selector_connection_repair_20260708.py
+tests/test_market_data_recovery_20260708.py
+tests/test_deployment_readiness_upgrade_20260705.py
+REPAIR_REPORT_API_SELECTORS_20260708.md
+TEST_REPORT_API_SELECTORS_20260708.txt
+CHANGED_FILES_API_SELECTORS_20260708.txt

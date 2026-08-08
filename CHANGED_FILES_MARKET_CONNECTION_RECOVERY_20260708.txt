@@ -1,0 +1,10 @@
+core/data/market_data_orchestrator.py
+core/complete_repair_20260705.py
+core/multi_symbol_load_manager_20260707.py
+ui/provider_health_panel_20260705.py
+ui/sidebar_fallback_panel.py
+tests/test_deployment_readiness_upgrade_20260705.py
+tests/test_market_data_recovery_20260708.py
+FIX_REPORT_MARKET_CONNECTION_RECOVERY_20260708.md
+CHANGED_FILES_MARKET_CONNECTION_RECOVERY_20260708.txt
+TEST_REPORT_MARKET_CONNECTION_RECOVERY_20260708.txt

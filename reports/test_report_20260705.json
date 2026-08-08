@@ -1,0 +1,18 @@
+{
+  "date": "2026-07-05",
+  "pytest_files": 44,
+  "passed": 397,
+  "failed": 0,
+  "warnings": 3,
+  "compileall": "PASS",
+  "streamlit_apptest_exceptions": 0,
+  "streamlit_headless_startup": "PASS",
+  "database_integrity": {
+    "main": "ok",
+    "field11": "ok"
+  },
+  "limitations": [
+    "No live API secrets/network in repair environment",
+    "No physical mobile-device automation"
+  ]
+}

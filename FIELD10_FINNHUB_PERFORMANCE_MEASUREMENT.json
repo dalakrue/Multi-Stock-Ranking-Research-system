@@ -1,0 +1,17 @@
+{
+  "command": "PYTHONPATH=. python migration benchmark",
+  "elapsed_seconds": 0.054755,
+  "max_rss_kb": 298072,
+  "max_rss_delta_kb": 5528,
+  "status": "PASS",
+  "migration_version": "field10-rank-ev6-finnhub-news-migration-20260704-v2",
+  "finnhub_news_schema_verified": true,
+  "table_counts": {
+    "field10_hourly_quality": 0,
+    "field10_daily_higher_lock": 0,
+    "field10_daily_snapshot_symbol": 5,
+    "field10_integrated_evidence_history": 0,
+    "field10_daily_news_event_rank": 0,
+    "field10_news_event_outcome": 0
+  }
+}

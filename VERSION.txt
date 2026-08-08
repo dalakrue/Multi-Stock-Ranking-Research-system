@@ -1,0 +1,6 @@
+Version: quant-lunch-eight-fields-v14-2026-06-24
+
+Scope: eight lazy Lunch fields, visible canonical copy controls, independent Field 7/8 routes, bounded history, and presentation-performance hardening.
+
+Additive build: field10-field11-institutional-2026-07-02
+Scope: preserves immutable Field 10 and adds canonical synchronized Lunch Field 11 historical-analogue simulator.

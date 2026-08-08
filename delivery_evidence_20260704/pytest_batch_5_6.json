@@ -1,0 +1,24 @@
+[
+  {
+    "index": 5,
+    "file": "tests/test_20260628_trust_imap_mobile.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 6.846,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_20260628_trust_imap_mobile.py.log"
+  },
+  {
+    "index": 6,
+    "file": "tests/test_arcef_sv.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.703,
+    "passed": 17,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_arcef_sv.py.log"
+  }
+]

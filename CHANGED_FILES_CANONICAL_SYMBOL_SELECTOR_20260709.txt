@@ -1,0 +1,23 @@
+Changed / added files for Canonical Symbol Selector Repair 20260709
+
+ADDED
+- core/canonical_symbol_selection_20260709.py
+- tests/test_canonical_symbol_selector_20260709.py
+- CHANGED_FILES_CANONICAL_SYMBOL_SELECTOR_20260709.txt
+- TEST_RESULTS_CANONICAL_SYMBOL_SELECTOR_20260709.txt
+- CANONICAL_SYMBOL_SELECTOR_REPAIR_20260709.md
+
+MODIFIED
+- core/institutional_quant_layer_20260708.py
+- ui/lunch_multi_symbol_selector_20260704.py
+- ui/lunch_four_core_fields_20260619.py
+- ui/lunch_field11_similar_path_20260702.py
+- ui/powerbi_cached_renderer_20260619.py
+- ui/shared_fx_session_selector_20260625.py
+- ui/lunch_field10_multi_symbol_20260701.py
+- ui/liquid_menu_popup_20260615.py
+- core/mobile_lite_mode_20260628.py
+- tabs/dinner_unified_center_20260617.py
+- tabs/research.py
+- tabs/antd_page_router_20260615.py
+- tabs/ai_assistant_lite.py

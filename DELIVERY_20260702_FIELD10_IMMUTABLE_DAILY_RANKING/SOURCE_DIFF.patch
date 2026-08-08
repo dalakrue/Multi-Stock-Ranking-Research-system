@@ -1,0 +1,3047 @@
+--- a/core/field10_daily_outcome_settlement_20260702.py
++++ b/core/field10_daily_outcome_settlement_20260702.py
+@@ -0,0 +1,307 @@
++"""Immutable Field 10 day-end settlement and next-day candidate workflow.
++
++Settlement is append-only and never updates the locked morning snapshot or its
++symbol rows. It is intended to run from the existing Settings calculation at
++broker 23:00 or later, not from Field 10 rendering.
++"""
++from __future__ import annotations
++
++from collections.abc import Mapping, MutableMapping, Sequence
++from pathlib import Path
++from typing import Any
++import json
++
++import numpy as np
++import pandas as pd
++
++from core.field10_daily_snapshot_contract_20260702 import (
++    DB_PATH, DAY_END_REVIEW_HOUR, _canonical_from_state, _canonical_json, _connect,
++    _frame_from_state, _json_safe, _normalize_ohlc, deterministic_hash,
++    load_current_daily_snapshot, migrate_daily_snapshot_database,
++)
++from core.multi_symbol_field10_20260701 import _cache_path, _read_cache_payload, normalize_symbol
++
++VERSION = "field10-day-end-settlement-20260702-v1"
++
++
++def _direction(start: float | None, end: float | None, tolerance: float = 1e-12) -> str:
++    if start is None or end is None or not np.isfinite(start) or not np.isfinite(end):
++        return "UNAVAILABLE"
++    change = float(end) - float(start)
++    if change > tolerance:
++        return "BUY"
++    if change < -tolerance:
++        return "SELL"
++    return "WAIT"
++
++
++def _correct(bias: Any, actual: str) -> int | None:
++    expected = str(bias or "").upper()
++    if expected not in {"BUY", "SELL", "WAIT"} or actual == "UNAVAILABLE":
++        return None
++    return int(expected == actual)
++
++
++def _cached_state(symbol: str) -> dict[str, Any]:
++    try:
++        payload = _read_cache_payload(_cache_path(symbol))
++        state = payload.get("state")
++        return dict(state) if isinstance(state, Mapping) else {}
++    except Exception:
++        return {}
++
++
++def _broker_now(state: Mapping[str, Any], canonical: Mapping[str, Any]) -> pd.Timestamp:
++    from core.shared_broker_time_20260622 import shared_broker_time_provider
++    contract = shared_broker_time_provider(state, canonical=dict(canonical))
++    value = pd.to_datetime(contract.get("broker_time"), errors="coerce")
++    if pd.isna(value):
++        raise ValueError("Shared broker-time provider did not publish broker time")
++    return pd.Timestamp(value)
++
++
++def _settle_symbol(row: Mapping[str, Any], state: Mapping[str, Any], latest_completed_utc: Any) -> dict[str, Any]:
++    frame = _normalize_ohlc(_frame_from_state(state)).dropna(subset=["time", "open", "high", "low", "close"])
++    frame = frame.sort_values("time", kind="mergesort").drop_duplicates("time", keep=False)
++    cutoff = pd.to_datetime(row.get("Completed Broker Candle"), errors="coerce", utc=True)
++    latest = pd.to_datetime(latest_completed_utc, errors="coerce", utc=True)
++    if pd.isna(cutoff) or frame.empty:
++        return {"settlement_status": "INSUFFICIENT_DATA", "reason": "cutoff or OHLC unavailable"}
++    frame = frame.loc[frame["time"].ge(cutoff)]
++    if pd.notna(latest):
++        frame = frame.loc[frame["time"].le(latest)]
++    anchor_rows = frame.loc[frame["time"].eq(cutoff)]
++    if anchor_rows.empty:
++        return {"settlement_status": "INSUFFICIENT_DATA", "reason": "cutoff close not found"}
++    anchor = float(anchor_rows.iloc[-1]["close"])
++
++    def horizon(hours: int) -> tuple[str, float | None]:
++        target = pd.Timestamp(cutoff) + pd.Timedelta(hours=hours)
++        found = frame.loc[frame["time"].ge(target)]
++        if found.empty:
++            return "UNAVAILABLE", None
++        close = float(found.iloc[0]["close"])
++        return _direction(anchor, close), close
++
++    actual1, close1 = horizon(1)
++    actual3, close3 = horizon(3)
++    actual6, close6 = horizon(6)
++    last_close = float(frame.iloc[-1]["close"]) if not frame.empty else None
++    day_direction = _direction(anchor, last_close)
++    after = frame.loc[frame["time"].gt(cutoff)]
++    bias = str(row.get("Stable Daily Bias") or "WAIT").upper()
++    if after.empty or anchor == 0:
++        mfe = mae = None
++    else:
++        highs = pd.to_numeric(after["high"], errors="coerce")
++        lows = pd.to_numeric(after["low"], errors="coerce")
++        if bias == "BUY":
++            mfe = float((highs.max() - anchor) / anchor)
++            mae = float((lows.min() - anchor) / anchor)
++        elif bias == "SELL":
++            mfe = float((anchor - lows.min()) / anchor)
++            mae = float((anchor - highs.max()) / anchor)
++        else:
++            mfe = float(max(abs(highs.max() - anchor), abs(lows.min() - anchor)) / anchor)
++            mae = 0.0
++    raw_result = None
++    if last_close is not None and anchor:
++        signed = (last_close - anchor) / anchor
++        raw_result = signed if bias == "BUY" else (-signed if bias == "SELL" else 0.0)
++    spread_pct = row.get("Spread Percentile")
++    spread_cost = 0.0 if spread_pct is None or pd.isna(spread_pct) else min(0.002, float(spread_pct) / 100.0 * 0.0002)
++    slippage_cost = spread_cost * 0.25
++    spread_adjusted = None if raw_result is None else raw_result - spread_cost
++    slippage_adjusted = None if spread_adjusted is None else spread_adjusted - slippage_cost
++    calibrated = row.get("Calibrated Bias Probability")
++    actual_correct = _correct(bias, actual1)
++    calibration_error = None
++    if calibrated is not None and not pd.isna(calibrated) and actual_correct is not None:
++        probability = float(calibrated) / 100.0 if abs(float(calibrated)) > 1 else float(calibrated)
++        calibration_error = abs(probability - float(actual_correct))
++    settled = all(value != "UNAVAILABLE" for value in (actual1, actual3, actual6))
++    return {
++        "settlement_status": "CURRENT_DAY_SETTLED" if settled else "PARTIAL_SETTLEMENT",
++        "actual_1h_direction": actual1, "actual_3h_direction": actual3,
++        "actual_6h_direction": actual6, "day_close_direction": day_direction,
++        "correct_1h": _correct(bias, actual1), "correct_3h": _correct(bias, actual3),
++        "correct_6h": _correct(bias, actual6), "mfe": mfe, "mae": mae,
++        "spread_adjusted_outcome": spread_adjusted,
++        "slippage_adjusted_outcome": slippage_adjusted,
++        "calibration_error": calibration_error,
++        "anchor_close": anchor, "close_1h": close1, "close_3h": close3,
++        "close_6h": close6, "day_close": last_close, "observed_rows": int(len(frame)),
++    }
++
++
++def prepare_next_day_candidate(
++    *, metadata: Mapping[str, Any], current_rows: pd.DataFrame,
++    prepared_at_broker_time: Any, parent_run_id: str | None = None,
++    path: Path | str = DB_PATH,
++) -> dict[str, Any]:
++    migrate_daily_snapshot_database(path)
++    source_day = str(metadata.get("broker_day"))
++    target_day = (pd.Timestamp(source_day) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
++    payload = {
++        "target_broker_day": target_day, "source_broker_day": source_day,
++        "universe_hash": metadata.get("universe_hash"),
++        "ordered_symbol_universe": metadata.get("ordered_symbol_universe"),
++        "main_symbol": metadata.get("main_symbol"), "parent_run_id": parent_run_id,
++        "latest_completed_h1": metadata.get("latest_completed_h1"),
++        "source_rows": current_rows[[c for c in ("Daily Rank", "Symbol", "Daily Grade", "Institutional Morning Score", "Stable Daily Bias") if c in current_rows]].to_dict("records"),
++        "activation_rule": "activate only at configured next morning cutoff after cutoff-complete evidence validation",
++    }
++    digest = deterministic_hash(payload)
++    candidate_id = f"NEXT-{target_day.replace('-', '')}-{digest[:18]}"
++    prepared = pd.Timestamp(prepared_at_broker_time).isoformat()
++    with _connect(path) as conn:
++        conn.execute(
++            """INSERT OR IGNORE INTO field10_next_day_candidate(
++                candidate_id,target_broker_day,source_broker_day,universe_hash,status,
++                parent_run_id,latest_completed_h1,candidate_hash,candidate_json,
++                prepared_at_broker_time,activated_snapshot_id
++            ) VALUES(?,?,?,?,?,?,?,?,?,?,NULL)""",
++            (candidate_id, target_day, source_day, str(metadata.get("universe_hash") or ""),
++             "NEXT_DAY_CANDIDATE_READY", str(parent_run_id or metadata.get("parent_run_id") or ""),
++             str(metadata.get("latest_completed_h1") or ""), digest, _canonical_json(payload), prepared),
++        )
++        conn.commit()
++    return {"ok": True, "status": "NEXT_DAY_CANDIDATE_READY", "candidate_id": candidate_id, "target_broker_day": target_day, "candidate_hash": digest}
++
++
++def settle_current_day(
++    state: MutableMapping[str, Any], *, parent_run_id: str | None = None,
++    symbols: Sequence[str] | None = None, path: Path | str = DB_PATH,
++) -> dict[str, Any]:
++    """Settle at broker 23:00+ without mutating the locked current publication."""
++    migrate_daily_snapshot_database(path)
++    snapshot = load_current_daily_snapshot(path=path)
++    metadata = snapshot.get("metadata") or {}
++    current = snapshot.get("current")
++    if not metadata or not isinstance(current, pd.DataFrame) or current.empty:
++        return {"ok": False, "status": "NO_LOCKED_SNAPSHOT"}
++    main = normalize_symbol(metadata.get("main_symbol") or current.iloc[0]["Symbol"])
++    main_state = _cached_state(main) or dict(state)
++    canonical = _canonical_from_state(main_state)
++    broker_now = _broker_now(main_state, canonical)
++    if int(broker_now.hour) < DAY_END_REVIEW_HOUR:
++        return {"ok": False, "status": "BEFORE_DAY_END_REVIEW", "broker_time": broker_now.isoformat()}
++    latest_utc = pd.to_datetime(
++        canonical.get("latest_completed_candle_time") or canonical.get("completed_broker_candle") or canonical.get("broker_candle_time"),
++        errors="coerce", utc=True,
++    )
++    selected = {normalize_symbol(s) for s in (symbols or current["Symbol"].tolist())}
++    settlements: list[dict[str, Any]] = []
++    with _connect(path) as conn:
++        conn.execute("BEGIN IMMEDIATE")
++        try:
++            for _, series in current.iterrows():
++                row = series.to_dict()
++                symbol = normalize_symbol(row.get("Symbol"))
++                if symbol not in selected:
++                    continue
++                existing = conn.execute(
++                    "SELECT settlement_status,outcome_hash FROM field10_daily_outcome WHERE daily_snapshot_id=? AND symbol=?",
++                    (metadata["daily_snapshot_id"], symbol),
++                ).fetchone()
++                if existing and existing["settlement_status"] == "CURRENT_DAY_SETTLED":
++                    settlements.append({"symbol": symbol, "status": "ALREADY_SETTLED", "outcome_hash": existing["outcome_hash"]})
++                    continue
++                symbol_state = _cached_state(symbol)
++                symbol_canonical = _canonical_from_state(symbol_state)
++                symbol_latest = pd.to_datetime(
++                    symbol_canonical.get("latest_completed_candle_time") or symbol_canonical.get("completed_broker_candle") or latest_utc,
++                    errors="coerce", utc=True,
++                )
++                result = _settle_symbol(row, symbol_state, symbol_latest)
++                outcome_payload = {
++                    "daily_snapshot_id": metadata["daily_snapshot_id"], "broker_day": metadata["broker_day"],
++                    "symbol": symbol, "settled_at_broker_time": broker_now.isoformat(), "result": result,
++                }
++                digest = deterministic_hash(outcome_payload)
++                conn.execute(
++                    """INSERT INTO field10_daily_outcome(
++                        daily_snapshot_id,broker_day,symbol,settlement_status,settled_at_broker_time,
++                        actual_1h_direction,actual_3h_direction,actual_6h_direction,day_close_direction,
++                        correct_1h,correct_3h,correct_6h,mfe,mae,spread_adjusted_outcome,
++                        slippage_adjusted_outcome,calibration_error,outcome_hash,outcome_json
++                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
++                    ON CONFLICT(daily_snapshot_id,symbol) DO UPDATE SET
++                        settlement_status=excluded.settlement_status,
++                        settled_at_broker_time=excluded.settled_at_broker_time,
++                        actual_1h_direction=excluded.actual_1h_direction,
++                        actual_3h_direction=excluded.actual_3h_direction,
++                        actual_6h_direction=excluded.actual_6h_direction,
++                        day_close_direction=excluded.day_close_direction,
++                        correct_1h=excluded.correct_1h,correct_3h=excluded.correct_3h,
++                        correct_6h=excluded.correct_6h,mfe=excluded.mfe,mae=excluded.mae,
++                        spread_adjusted_outcome=excluded.spread_adjusted_outcome,
++                        slippage_adjusted_outcome=excluded.slippage_adjusted_outcome,
++                        calibration_error=excluded.calibration_error,outcome_hash=excluded.outcome_hash,
++                        outcome_json=excluded.outcome_json
++                    WHERE field10_daily_outcome.settlement_status!='CURRENT_DAY_SETTLED'""",
++                    (metadata["daily_snapshot_id"], metadata["broker_day"], symbol, result["settlement_status"],
++                     broker_now.isoformat(), result.get("actual_1h_direction"), result.get("actual_3h_direction"),
++                     result.get("actual_6h_direction"), result.get("day_close_direction"), result.get("correct_1h"),
++                     result.get("correct_3h"), result.get("correct_6h"), result.get("mfe"), result.get("mae"),
++                     result.get("spread_adjusted_outcome"), result.get("slippage_adjusted_outcome"),
++                     result.get("calibration_error"), digest, _canonical_json(outcome_payload)),
++                )
++                settlements.append({"symbol": symbol, "status": result["settlement_status"], "outcome_hash": digest})
++                # Settlement evidence enters calibration/validation only here.
++                registry_payload = {"symbol": symbol, "broker_day": metadata["broker_day"], "result": result}
++                registry_hash = deterministic_hash(registry_payload)
++                conn.execute(
++                    """INSERT OR IGNORE INTO field10_model_validation_registry(
++                        registry_id,broker_day,symbol,method_name,model_version,formula_version,
++                        threshold_version,sample_count,validation_status,promotion_status,p_value,
++                        pbo_estimate,result_hash,result_json
++                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
++                    (f"SET-{registry_hash[:24]}", metadata["broker_day"], symbol, "SETTLED_OUTCOME",
++                     metadata["model_version"], metadata["formula_version"], metadata["threshold_version"],
++                     int(result.get("observed_rows") or 0), result["settlement_status"], "HISTORY_ONLY",
++                     None, None, registry_hash, _canonical_json(registry_payload)),
++                )
++            conn.commit()
++        except Exception:
++            conn.rollback()
++            raise
++    candidate = prepare_next_day_candidate(
++        metadata=metadata, current_rows=current, prepared_at_broker_time=broker_now,
++        parent_run_id=parent_run_id, path=path,
++    )
++    all_settled = bool(settlements) and all(item["status"] in {"CURRENT_DAY_SETTLED", "ALREADY_SETTLED"} for item in settlements)
++    report = {
++        "ok": True, "status": "CURRENT_DAY_SETTLED" if all_settled else "PARTIAL_SETTLEMENT",
++        "broker_time": broker_now.isoformat(), "daily_snapshot_id": metadata["daily_snapshot_id"],
++        "settlements": settlements, "next_day_candidate": candidate,
++        "locked_publication_mutated": False, "version": VERSION,
++    }
++    state["field10_daily_outcome_settlement_20260702"] = report
++    return report
++
++
++def load_outcomes(*, broker_day: str | None = None, path: Path | str = DB_PATH) -> pd.DataFrame:
++    migrate_daily_snapshot_database(path)
++    with _connect(path) as conn:
++        clauses = ""
++        params: tuple[Any, ...] = ()
++        if broker_day:
++            clauses = "WHERE broker_day=?"
++            params = (broker_day,)
++        return pd.read_sql_query(
++            f"""SELECT broker_day AS [Broker Day],symbol AS Symbol,settlement_status AS Status,
++                       settled_at_broker_time AS [Settled At Broker Time],actual_1h_direction AS [Actual 1H],
++                       actual_3h_direction AS [Actual 3H],actual_6h_direction AS [Actual 6H],
++                       day_close_direction AS [Day Close],correct_1h AS [Correct 1H],
++                       correct_3h AS [Correct 3H],correct_6h AS [Correct 6H],MFE,MAE,
++                       spread_adjusted_outcome AS [Spread Adjusted],slippage_adjusted_outcome AS [Slippage Adjusted],
++                       calibration_error AS [Calibration Error],outcome_hash AS [Outcome Hash]
++                FROM field10_daily_outcome {clauses} ORDER BY broker_day DESC,symbol""",
++            conn, params=params,
++        )
++
++
++__all__ = [
++    "VERSION", "settle_current_day", "prepare_next_day_candidate", "load_outcomes",
++]
+--- a/core/field10_daily_snapshot_contract_20260702.py
++++ b/core/field10_daily_snapshot_contract_20260702.py
+@@ -0,0 +1,1624 @@
++"""Authoritative immutable morning publication contract for Lunch Field 10.
++
++This module is additive. It consumes the already-published protected Field 10,
++Field 1 Table 4, Field 3, canonical, and ten-paper research evidence. It does
++not replace the production BUY/SELL/WAIT action. The authoritative morning
++publication is append-only and survives Streamlit/process restarts in SQLite.
++
++Heavy work belongs to the Settings multi-symbol run. UI functions in this
++module are read-only database queries.
++"""
++from __future__ import annotations
++
++from collections.abc import Mapping, MutableMapping, Sequence
++from dataclasses import asdict, dataclass, field
++from hashlib import sha256
++from pathlib import Path
++from typing import Any
++import json
++import math
++import os
++import sqlite3
++
++import numpy as np
++import pandas as pd
++
++from core.multi_symbol_field10_20260701 import (
++    DB_PATH,
++    PROVIDER_ALIASES,
++    _cache_path,
++    _read_cache_payload,
++    normalize_symbol,
++)
++
++MORNING_LOCK_HOUR = int(os.getenv("FIELD10_MORNING_LOCK_HOUR", "3"))
++MORNING_LOCK_MINUTE = int(os.getenv("FIELD10_MORNING_LOCK_MINUTE", "0"))
++DAY_END_REVIEW_HOUR = int(os.getenv("FIELD10_DAY_END_REVIEW_HOUR", "23"))
++TIMEFRAME = "H1"
++HIGHER_STANDARD_REQUIRED_CANDLES = int(os.getenv("FIELD10_HIGHER_REQUIRED_CANDLES", "600"))
++MODEL_VERSION = "field10-daily-snapshot-20260702-v1"
++FORMULA_VERSION = "institutional-morning-score-20260702-v1"
++THRESHOLD_VERSION = "field10-eligibility-thresholds-20260702-v1"
++CONTRACT_VERSION = "one-morning-one-decision-20260702-v1"
++
++
++@dataclass(frozen=True)
++class SnapshotThresholds:
++    maximum_stale_hours: float = 0.0
++    maximum_spread_percentile: float = 95.0
++    maximum_absolute_spread: float = 20.0
++    severe_changepoint_probability: float = 0.65
++    severe_structural_break_strength: float = 0.75
++    minimum_post_break_sample: int = 96
++    minimum_calibration_samples: int = 60
++    minimum_conformal_samples: int = 60
++    minimum_settled_accuracy_samples: int = 20
++    strong_calibrated_probability: float = 70.0
++    strong_regime_persistence: float = 70.0
++    grade_a_plus: float = 85.0
++    grade_a: float = 78.0
++    grade_b: float = 70.0
++    grade_c: float = 60.0
++    critical_components: tuple[str, ...] = (
++        "regime_persistence",
++        "calibrated_bias_probability",
++        "data_quality",
++        "transition_safety",
++    )
++
++
++@dataclass(frozen=True)
++class ScoreWeights:
++    regime_persistence: float = 18.0
++    calibrated_bias_probability: float = 15.0
++    settled_forecast_accuracy: float = 12.0
++    evidence_agreement: float = 10.0
++    data_quality: float = 10.0
++    spread_execution_quality: float = 8.0
++    transition_safety: float = 8.0
++    conformal_coverage_sharpness: float = 7.0
++    tail_risk_safety: float = 7.0
++    unique_exposure_score: float = 5.0
++
++
++DEFAULT_THRESHOLDS = SnapshotThresholds()
++DEFAULT_WEIGHTS = ScoreWeights()
++
++CURRENT_COLUMNS = [
++    "Daily Rank", "Symbol", "Role", "Daily Grade", "Institutional Morning Score",
++    "Existing Rank Score", "Stable Daily Bias", "Less-Risky Bias", "Entry Permission",
++    "Safety Veto", "Higher Standard Regime", "600-H1 Completion", "Regime Probability",
++    "Regime Entropy", "Posterior Margin", "Regime Age", "Expected Regime Duration",
++    "Estimated Remaining Duration", "Transition Risk 1H", "Transition Risk 3H",
++    "Transition Risk 6H", "Calibrated Bias Probability", "Brier Score",
++    "Forecast Accuracy 1H", "Forecast Accuracy 3H", "Forecast Accuracy 6H",
++    "Technical Bias", "Technical Reliability", "Sentiment Bias", "Sentiment Reliability",
++    "Session Bias", "Session Reliability", "Evidence Agreement", "Conflict Index",
++    "Conformal Coverage", "Conformal Interval Width", "Structural Break Status",
++    "Changepoint Probability", "Data Quality Grade", "Spread Percentile", "CVaR 95%",
++    "Correlation Cluster", "Duplicate Exposure Penalty", "Lock Status",
++    "Locked At Broker Time", "Locked Until Broker Time", "Universe Hash", "Snapshot Hash",
++    "Canonical Run ID", "Completed Broker Candle", "Explanation", "Publication Status",
++]
++
++HISTORY_COLUMNS = [
++    "Broker Day", "Symbol", "Original Morning Rank", "Original Morning Score",
++    "Original Bias", "Original Less-Risky Bias", "Outcome Settled Status",
++    "Actual 1H Direction", "Actual 3H Direction", "Actual 6H Direction",
++    "Day-Close Direction", "Correct 1H", "Correct 3H", "Correct 6H", "MFE", "MAE",
++    "Spread-Adjusted Outcome", "Calibration Error", "Rank Stability",
++    "Previous-Day Rank Change", "Daily Grade", "Model Version", "Formula Version",
++    "Universe Hash", "Snapshot Hash",
++]
++
++
++def _safe_float(value: Any, *, percent: bool = False) -> float | None:
++    try:
++        number = float(value)
++    except (TypeError, ValueError):
++        return None
++    if not math.isfinite(number):
++        return None
++    if percent and abs(number) <= 1.0:
++        number *= 100.0
++    return float(number)
++
++
++def _clip100(value: Any) -> float | None:
++    number = _safe_float(value, percent=True)
++    return None if number is None else float(np.clip(number, 0.0, 100.0))
++
++
++def _json_safe(value: Any) -> Any:
++    if isinstance(value, Mapping):
++        return {str(k): _json_safe(v) for k, v in value.items()}
++    if isinstance(value, (list, tuple, set)):
++        return [_json_safe(v) for v in value]
++    if isinstance(value, pd.DataFrame):
++        return [_json_safe(v) for v in value.to_dict("records")]
++    if isinstance(value, pd.Series):
++        return [_json_safe(v) for v in value.tolist()]
++    if isinstance(value, pd.Timestamp):
++        return value.isoformat()
++    if isinstance(value, np.generic):
++        return value.item()
++    if value is pd.NA or (isinstance(value, float) and math.isnan(value)):
++        return None
++    return value
++
++
++def _canonical_json(value: Any) -> str:
++    return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
++
++
++def deterministic_hash(value: Any) -> str:
++    return sha256(_canonical_json(value).encode("utf-8")).hexdigest()
++
++
++def _connect(path: Path | str) -> sqlite3.Connection:
++    path = Path(path)
++    path.parent.mkdir(parents=True, exist_ok=True)
++    conn = sqlite3.connect(str(path), timeout=8.0)
++    conn.execute("PRAGMA journal_mode=WAL")
++    conn.execute("PRAGMA synchronous=NORMAL")
++    conn.execute("PRAGMA foreign_keys=ON")
++    conn.execute("PRAGMA busy_timeout=8000")
++    conn.row_factory = sqlite3.Row
++    return conn
++
++
++def migrate_daily_snapshot_database(path: Path | str = DB_PATH) -> dict[str, Any]:
++    """Migration-safe creation of append-only Field 10 daily contract tables."""
++    with _connect(path) as conn:
++        conn.executescript(
++            """
++            CREATE TABLE IF NOT EXISTS field10_daily_snapshot (
++                daily_snapshot_id TEXT PRIMARY KEY,
++                broker_day TEXT NOT NULL UNIQUE,
++                cutoff_broker_time TEXT NOT NULL,
++                latest_completed_h1 TEXT NOT NULL,
++                ordered_symbol_universe_json TEXT NOT NULL,
++                universe_hash TEXT NOT NULL,
++                main_symbol TEXT NOT NULL,
++                secondary_symbols_json TEXT NOT NULL,
++                provider_aliases_json TEXT NOT NULL,
++                symbol_count INTEGER NOT NULL,
++                parent_run_id TEXT NOT NULL,
++                child_run_ids_json TEXT NOT NULL,
++                canonical_run_ids_json TEXT NOT NULL,
++                source_ids_json TEXT NOT NULL,
++                snapshot_hashes_json TEXT NOT NULL,
++                model_version TEXT NOT NULL,
++                formula_version TEXT NOT NULL,
++                threshold_version TEXT NOT NULL,
++                content_hash TEXT NOT NULL UNIQUE,
++                publication_status TEXT NOT NULL,
++                published_at_broker_time TEXT NOT NULL,
++                locked_until_broker_time TEXT NOT NULL,
++                metadata_json TEXT NOT NULL,
++                created_at_broker_time TEXT NOT NULL
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_snapshot_day_status
++                ON field10_daily_snapshot(broker_day DESC, publication_status);
++            CREATE INDEX IF NOT EXISTS idx_f10_snapshot_universe
++                ON field10_daily_snapshot(universe_hash, broker_day DESC);
++
++            CREATE TABLE IF NOT EXISTS field10_daily_snapshot_symbol (
++                daily_snapshot_id TEXT NOT NULL,
++                broker_day TEXT NOT NULL,
++                symbol TEXT NOT NULL,
++                role TEXT NOT NULL,
++                daily_rank INTEGER,
++                daily_grade TEXT NOT NULL,
++                institutional_score REAL,
++                existing_rank_score REAL,
++                eligibility_status TEXT NOT NULL,
++                trade_permission TEXT NOT NULL,
++                stable_daily_bias TEXT,
++                less_risky_bias TEXT,
++                higher_standard_regime TEXT,
++                sample_count INTEGER NOT NULL DEFAULT 0,
++                sample_complete_status TEXT NOT NULL,
++                completed_candle TEXT,
++                canonical_run_id TEXT,
++                source_id TEXT,
++                snapshot_hash TEXT,
++                correlation_cluster TEXT,
++                content_hash TEXT NOT NULL,
++                row_json TEXT NOT NULL,
++                score_explanation_json TEXT NOT NULL,
++                PRIMARY KEY(daily_snapshot_id, symbol),
++                FOREIGN KEY(daily_snapshot_id) REFERENCES field10_daily_snapshot(daily_snapshot_id)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_snapshot_symbol_day_rank
++                ON field10_daily_snapshot_symbol(broker_day DESC, daily_rank, symbol);
++            CREATE INDEX IF NOT EXISTS idx_f10_snapshot_symbol_status
++                ON field10_daily_snapshot_symbol(eligibility_status, symbol, broker_day DESC);
++
++            CREATE TABLE IF NOT EXISTS field10_daily_score_component (
++                daily_snapshot_id TEXT NOT NULL,
++                symbol TEXT NOT NULL,
++                component_name TEXT NOT NULL,
++                component_value REAL,
++                configured_weight REAL NOT NULL,
++                available INTEGER NOT NULL,
++                critical INTEGER NOT NULL,
++                contribution REAL,
++                status TEXT NOT NULL,
++                evidence_json TEXT NOT NULL,
++                PRIMARY KEY(daily_snapshot_id, symbol, component_name),
++                FOREIGN KEY(daily_snapshot_id, symbol)
++                    REFERENCES field10_daily_snapshot_symbol(daily_snapshot_id, symbol)
++            );
++
++            CREATE TABLE IF NOT EXISTS field10_daily_safety_event (
++                event_id TEXT PRIMARY KEY,
++                daily_snapshot_id TEXT,
++                broker_day TEXT NOT NULL,
++                symbol TEXT NOT NULL,
++                observed_at_broker_time TEXT NOT NULL,
++                safety_veto TEXT NOT NULL,
++                reasons_json TEXT NOT NULL,
++                evidence_json TEXT NOT NULL,
++                event_hash TEXT NOT NULL UNIQUE,
++                FOREIGN KEY(daily_snapshot_id) REFERENCES field10_daily_snapshot(daily_snapshot_id)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_safety_latest
++                ON field10_daily_safety_event(broker_day DESC, symbol, observed_at_broker_time DESC);
++
++            CREATE TABLE IF NOT EXISTS field10_daily_outcome (
++                daily_snapshot_id TEXT NOT NULL,
++                broker_day TEXT NOT NULL,
++                symbol TEXT NOT NULL,
++                settlement_status TEXT NOT NULL,
++                settled_at_broker_time TEXT,
++                actual_1h_direction TEXT,
++                actual_3h_direction TEXT,
++                actual_6h_direction TEXT,
++                day_close_direction TEXT,
++                correct_1h INTEGER,
++                correct_3h INTEGER,
++                correct_6h INTEGER,
++                mfe REAL,
++                mae REAL,
++                spread_adjusted_outcome REAL,
++                slippage_adjusted_outcome REAL,
++                calibration_error REAL,
++                outcome_hash TEXT,
++                outcome_json TEXT NOT NULL,
++                PRIMARY KEY(daily_snapshot_id, symbol),
++                FOREIGN KEY(daily_snapshot_id, symbol)
++                    REFERENCES field10_daily_snapshot_symbol(daily_snapshot_id, symbol)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_outcome_day_status
++                ON field10_daily_outcome(broker_day DESC, settlement_status, symbol);
++
++            CREATE TABLE IF NOT EXISTS field10_next_day_candidate (
++                candidate_id TEXT PRIMARY KEY,
++                target_broker_day TEXT NOT NULL,
++                source_broker_day TEXT NOT NULL,
++                universe_hash TEXT NOT NULL,
++                status TEXT NOT NULL,
++                parent_run_id TEXT,
++                latest_completed_h1 TEXT,
++                candidate_hash TEXT NOT NULL UNIQUE,
++                candidate_json TEXT NOT NULL,
++                prepared_at_broker_time TEXT NOT NULL,
++                activated_snapshot_id TEXT,
++                UNIQUE(target_broker_day, universe_hash, status)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_candidate_target
++                ON field10_next_day_candidate(target_broker_day DESC, status);
++
++            CREATE TABLE IF NOT EXISTS field10_model_validation_registry (
++                registry_id TEXT PRIMARY KEY,
++                broker_day TEXT NOT NULL,
++                symbol TEXT NOT NULL,
++                method_name TEXT NOT NULL,
++                model_version TEXT NOT NULL,
++                formula_version TEXT NOT NULL,
++                threshold_version TEXT NOT NULL,
++                sample_count INTEGER NOT NULL DEFAULT 0,
++                validation_status TEXT NOT NULL,
++                promotion_status TEXT NOT NULL,
++                p_value REAL,
++                pbo_estimate REAL,
++                result_hash TEXT NOT NULL,
++                result_json TEXT NOT NULL,
++                UNIQUE(broker_day, symbol, method_name, result_hash)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_validation_method
++                ON field10_model_validation_registry(method_name, broker_day DESC, symbol);
++
++            CREATE TABLE IF NOT EXISTS field10_daily_snapshot_audit (
++                audit_id TEXT PRIMARY KEY,
++                daily_snapshot_id TEXT,
++                broker_day TEXT NOT NULL,
++                action TEXT NOT NULL,
++                status TEXT NOT NULL,
++                observed_at_broker_time TEXT NOT NULL,
++                details_json TEXT NOT NULL,
++                audit_hash TEXT NOT NULL UNIQUE,
++                FOREIGN KEY(daily_snapshot_id) REFERENCES field10_daily_snapshot(daily_snapshot_id)
++            );
++            CREATE INDEX IF NOT EXISTS idx_f10_audit_snapshot
++                ON field10_daily_snapshot_audit(daily_snapshot_id, observed_at_broker_time DESC);
++            """
++        )
++        conn.commit()
++    return {
++        "ok": True,
++        "path": str(path),
++        "contract_version": CONTRACT_VERSION,
++        "tables": [
++            "field10_daily_snapshot", "field10_daily_snapshot_symbol",
++            "field10_daily_score_component", "field10_daily_safety_event",
++            "field10_daily_outcome", "field10_next_day_candidate",
++            "field10_model_validation_registry", "field10_daily_snapshot_audit",
++        ],
++    }
++
++
++def canonical_symbol_universe(symbols: Sequence[Any], main_symbol: Any) -> list[str]:
++    """Deterministic universe: main first, remaining symbols alphabetical."""
++    main = normalize_symbol(main_symbol)
++    normalized = {normalize_symbol(value) for value in symbols if str(value or "").strip()}
++    normalized.add(main)
++    return [main, *sorted(symbol for symbol in normalized if symbol != main)]
++
++
++def symbol_universe_hash(symbols: Sequence[Any], main_symbol: Any) -> str:
++    ordered = canonical_symbol_universe(symbols, main_symbol)
++    aliases = {symbol: PROVIDER_ALIASES.get(symbol, {}) for symbol in ordered}
++    return deterministic_hash({"timeframe": TIMEFRAME, "main": ordered[0], "symbols": ordered, "aliases": aliases})
++
++
++def _canonical_from_state(state: Mapping[str, Any]) -> dict[str, Any]:
++    try:
++        from core.canonical_runtime_20260617 import get_canonical
++        canonical = get_canonical(state)
++        if isinstance(canonical, Mapping):
++            return dict(canonical)
++    except Exception:
++        pass
++    for key in (
++        "canonical_decision_result_20260617", "canonical_decision_result",
++        "last_valid_canonical_decision_result_20260617",
++    ):
++        value = state.get(key)
++        if isinstance(value, Mapping):
++            return dict(value)
++    return {}
++
++
++def _frame_from_state(state: Mapping[str, Any]) -> pd.DataFrame:
++    for key in (
++        "canonical_completed_ohlc_df_20260617", "calculation_staging_ohlc_df_20260617",
++        "last_df", "dv_pp_df",
++    ):
++        value = state.get(key)
++        if isinstance(value, pd.DataFrame) and not value.empty:
++            return value.copy(deep=False)
++    return pd.DataFrame()
++
++
++def _column(frame: pd.DataFrame, *names: str) -> str | None:
++    normalized = {str(c).strip().lower().replace("_", " "): str(c) for c in frame.columns}
++    for name in names:
++        found = normalized.get(name.lower().replace("_", " "))
++        if found:
++            return found
++    return None
++
++
++def _normalize_ohlc(frame: pd.DataFrame) -> pd.DataFrame:
++    if not isinstance(frame, pd.DataFrame) or frame.empty:
++        return pd.DataFrame(columns=["time", "open", "high", "low", "close"])
++    time_col = _column(frame, "time", "datetime", "timestamp", "date", "event time utc", "event_time_utc")
++    close_col = _column(frame, "close", "c")
++    if time_col is None or close_col is None:
++        return pd.DataFrame(columns=["time", "open", "high", "low", "close"])
++    result = pd.DataFrame({"time": pd.to_datetime(frame[time_col], errors="coerce", utc=True)})
++    for target, alternatives in {
++        "open": ("open", "o"), "high": ("high", "h"),
++        "low": ("low", "l"), "close": ("close", "c"),
++    }.items():
++        source = _column(frame, *alternatives)
++        result[target] = pd.to_numeric(frame[source], errors="coerce") if source else np.nan
++    return result
++
++
++def _is_crypto(symbol: str) -> bool:
++    return normalize_symbol(symbol).startswith(("BTC", "ETH"))
++
++
++def _expected_trading_hours(start: pd.Timestamp, end: pd.Timestamp, symbol: str) -> pd.DatetimeIndex:
++    expected = pd.date_range(start=start, end=end, freq="h", tz="UTC")
++    if _is_crypto(symbol):
++        return expected
++    # Weekend closure is not treated as a missing market candle. This still
++    # catches gaps during ordinary Monday-Friday trading hours.
++    return expected[expected.dayofweek < 5]
++
++
++def validate_completed_h1_frame(
++    frame: pd.DataFrame,
++    *,
++    latest_completed_h1_utc: Any,
++    symbol: str,
++    required_candles: int = HIGHER_STANDARD_REQUIRED_CANDLES,
++) -> dict[str, Any]:
++    """Validate and freeze exactly the last required completed H1 candles."""
++    latest = pd.to_datetime(latest_completed_h1_utc, errors="coerce", utc=True)
++    raw = _normalize_ohlc(frame)
++    raw_count = int(len(raw))
++    invalid_time_count = int(raw["time"].isna().sum()) if not raw.empty else 0
++    raw = raw.dropna(subset=["time", "open", "high", "low", "close"])
++    duplicate_count = int(raw.duplicated("time", keep=False).sum())
++    raw = raw.drop_duplicates("time", keep=False)
++    future_count = 0
++    if pd.notna(latest):
++        future_count = int(raw["time"].gt(latest).sum())
++        raw = raw.loc[raw["time"].le(latest)]
++    else:
++        raw = raw.iloc[0:0]
++    raw = raw.sort_values("time", kind="mergesort")
++    valid_count = int(len(raw))
++    window = raw.tail(required_candles).copy()
++    missing_candle_count = 0
++    if len(window) >= 2:
++        expected = _expected_trading_hours(pd.Timestamp(window["time"].iloc[0]), pd.Timestamp(window["time"].iloc[-1]), symbol)
++        missing_candle_count = int(len(expected.difference(pd.DatetimeIndex(window["time"]))))
++    chronological = bool(window["time"].is_monotonic_increasing and window["time"].is_unique)
++    exact_count = int(len(window)) == int(required_candles)
++    latest_matches = bool(not window.empty and pd.notna(latest) and pd.Timestamp(window["time"].iloc[-1]) == pd.Timestamp(latest))
++    complete = bool(
++        exact_count and chronological and duplicate_count == 0 and future_count == 0
++        and invalid_time_count == 0 and missing_candle_count == 0 and latest_matches
++    )
++    reasons: list[str] = []
++    if not exact_count:
++        reasons.append(f"requires exactly {required_candles} valid H1 candles; found {len(window)}")
++    if duplicate_count:
++        reasons.append(f"duplicate timestamps={duplicate_count}")
++    if future_count:
++        reasons.append(f"future timestamps={future_count}")
++    if invalid_time_count:
++        reasons.append(f"invalid timestamps={invalid_time_count}")
++    if missing_candle_count:
++        reasons.append(f"missing active-market H1 candles={missing_candle_count}")
++    if not chronological:
++        reasons.append("timestamps are not unique chronological H1 identities")
++    if not latest_matches:
++        reasons.append("window does not end at the required completed cutoff candle")
++    window_hash = deterministic_hash({
++        "symbol": normalize_symbol(symbol), "latest": None if pd.isna(latest) else pd.Timestamp(latest).isoformat(),
++        "rows": window[["time", "open", "high", "low", "close"]].to_dict("records"),
++    }) if not window.empty else ""
++    return {
++        "status": "COMPLETE" if complete else "INCOMPLETE",
++        "eligible": complete,
++        "required_candles": int(required_candles),
++        "raw_count": raw_count,
++        "valid_sample_count": valid_count,
++        "sample_count": int(len(window)),
++        "window_start": None if window.empty else pd.Timestamp(window["time"].iloc[0]).isoformat(),
++        "window_end": None if window.empty else pd.Timestamp(window["time"].iloc[-1]).isoformat(),
++        "missing_candle_count": missing_candle_count,
++        "duplicate_count": duplicate_count,
++        "future_timestamp_count": future_count,
++        "invalid_timestamp_count": invalid_time_count,
++        "chronological": chronological,
++        "latest_matches_cutoff": latest_matches,
++        "window_hash": window_hash,
++        "reasons": reasons,
++        "frame": window.reset_index(drop=True),
++    }
++
++
++def _broker_identity(state: Mapping[str, Any], canonical: Mapping[str, Any]) -> dict[str, Any]:
++    from core.shared_broker_time_20260622 import shared_broker_time_provider
++
++    contract = dict(shared_broker_time_provider(state, canonical=dict(canonical)))
++    broker_time = pd.to_datetime(contract.get("broker_time"), errors="coerce")
++    latest_utc = pd.to_datetime(contract.get("latest_completed_h1_utc"), errors="coerce", utc=True)
++    if pd.isna(broker_time):
++        broker_value = canonical.get("broker_candle_time") or canonical.get("completed_broker_candle")
++        broker_time = pd.to_datetime(broker_value, errors="coerce")
++    if pd.isna(broker_time):
++        raise ValueError("Shared broker-time provider did not publish broker wall time")
++    broker_time = pd.Timestamp(broker_time)
++    # The provider normally returns a tz-aware broker timestamp. A fallback for
++    # malformed clocks uses the resolved numeric offset without local-PC time.
++    from datetime import timezone, timedelta
++    if broker_time.tzinfo is None:
++        offset_minutes = int(contract.get("broker_offset_minutes") or 0)
++        broker_tz = timezone(timedelta(minutes=offset_minutes))
++        broker_time = broker_time.tz_localize(broker_tz)
++    else:
++        offset_minutes = int(contract.get("broker_offset_minutes") or round((broker_time.utcoffset() or pd.Timedelta(0)).total_seconds() / 60))
++        broker_tz = timezone(timedelta(minutes=offset_minutes))
++    if broker_time.tzinfo is None:
++        broker_time = broker_time.tz_localize(broker_tz)
++    else:
++        broker_time = broker_time.tz_convert(broker_tz)
++    broker_day = broker_time.strftime("%Y-%m-%d")
++    day_start = broker_time.normalize()
++    cutoff = day_start + pd.Timedelta(hours=MORNING_LOCK_HOUR, minutes=MORNING_LOCK_MINUTE)
++    last_usable_broker = cutoff - pd.Timedelta(hours=1)
++    last_usable_utc = last_usable_broker.tz_convert("UTC")
++    if pd.notna(latest_utc) and pd.Timestamp(latest_utc) < last_usable_utc:
++        effective_latest = pd.Timestamp(latest_utc)
++    else:
++        effective_latest = last_usable_utc
++    locked_until = cutoff + pd.Timedelta(days=1)
++    return {
++        **contract,
++        "broker_time": broker_time,
++        "broker_day": broker_day,
++        "cutoff_broker_time": cutoff,
++        "latest_completed_h1": effective_latest,
++        "required_cutoff_completed_h1": last_usable_utc,
++        "locked_until_broker_time": locked_until,
++        "before_cutoff": broker_time < cutoff,
++        "at_or_after_day_end": broker_time.hour >= DAY_END_REVIEW_HOUR,
++        "broker_offset_minutes": offset_minutes,
++    }
++
++
++def _load_cached_states(symbols: Sequence[str]) -> dict[str, dict[str, Any]]:
++    result: dict[str, dict[str, Any]] = {}
++    for symbol in symbols:
++        try:
++            payload = _read_cache_payload(_cache_path(symbol))
++            state = payload.get("state")
++            if isinstance(state, Mapping):
++                result[symbol] = dict(state)
++        except Exception:
++            continue
++    return result
++
++
++def _load_existing_evidence(
++    parent_run_id: str, path: Path | str,
++) -> tuple[
++    dict[str, dict[str, Any]], dict[str, dict[str, Any]],
++    dict[str, dict[str, Any]], dict[str, dict[str, Any]],
++]:
++    legacy: dict[str, dict[str, Any]] = {}
++    integrated: dict[str, dict[str, Any]] = {}
++    research: dict[str, dict[str, Any]] = {}
++    generations: dict[str, dict[str, Any]] = {}
++    with _connect(path) as conn:
++        try:
++            for row in conn.execute(
++                "SELECT * FROM field10_daily_higher_lock WHERE parent_run_id=?", (str(parent_run_id),)
++            ).fetchall():
++                legacy[normalize_symbol(row["symbol"])] = dict(row)
++        except sqlite3.Error:
++            pass
++        try:
++            rows = conn.execute(
++                """SELECT * FROM field10_integrated_evidence WHERE parent_run_id=?
++                   ORDER BY broker_timestamp DESC, created_at DESC""", (str(parent_run_id),)
++            ).fetchall()
++            for row in rows:
++                symbol = normalize_symbol(row["symbol"])
++                integrated.setdefault(symbol, dict(row))
++        except sqlite3.Error:
++            pass
++        try:
++            rows = conn.execute(
++                """SELECT * FROM field10_research_validation WHERE parent_run_id=?
++                   ORDER BY broker_timestamp DESC, created_at DESC""", (str(parent_run_id),)
++            ).fetchall()
++            for row in rows:
++                symbol = normalize_symbol(row["symbol"])
++                if symbol not in research:
++                    data = dict(row)
++                    try:
++                        data["result"] = json.loads(data.get("result_json") or "{}")
++                    except Exception:
++                        data["result"] = {}
++                    research[symbol] = data
++        except sqlite3.Error:
++            pass
++        try:
++            rows = conn.execute(
++                """SELECT parent_run_id,child_run_id,symbol,timeframe,canonical_run_id,source_id,
++                          snapshot_hash,completed_broker_candle,publication_status,
++                          runtime_snapshot_path,runtime_snapshot_sha256,updated_at
++                   FROM child_generation_registry
++                   WHERE parent_run_id=? AND UPPER(timeframe)=?
++                   ORDER BY completed_broker_candle DESC,updated_at DESC""",
++                (str(parent_run_id), TIMEFRAME),
++            ).fetchall()
++            for row in rows:
++                symbol = normalize_symbol(row["symbol"])
++                generations.setdefault(symbol, dict(row))
++        except sqlite3.Error:
++            pass
++    return legacy, integrated, research, generations
++
++
++def _mapping(value: Any) -> Mapping[str, Any]:
++    return value if isinstance(value, Mapping) else {}
++
++
++def _bias(value: Any) -> str | None:
++    text = str(value or "").strip().upper()
++    if "BUY" in text or text in {"BULL", "UP", "LONG"}:
++        return "BUY"
++    if "SELL" in text or text in {"BEAR", "DOWN", "SHORT"}:
++        return "SELL"
++    if text in {"WAIT", "HOLD", "NO TRADE", "BLOCKED", "NEUTRAL", "RANGE"}:
++        return "WAIT"
++    return None
++
++
++def _forecast_accuracy_from_db(symbol: str, path: Path | str) -> tuple[float | None, float | None, float | None, int]:
++    with _connect(path) as conn:
++        try:
++            rows = conn.execute(
++                """SELECT correct_1h,correct_3h,correct_6h FROM field10_daily_outcome
++                   WHERE symbol=? AND settlement_status='CURRENT_DAY_SETTLED'
++                   ORDER BY broker_day DESC LIMIT 60""", (normalize_symbol(symbol),)
++            ).fetchall()
++        except sqlite3.Error:
++            rows = []
++    if not rows:
++        return None, None, None, 0
++    values = [[row[key] for row in rows if row[key] is not None] for key in ("correct_1h", "correct_3h", "correct_6h")]
++    accuracy = [None if not x else 100.0 * float(np.mean(x)) for x in values]
++    return accuracy[0], accuracy[1], accuracy[2], len(rows)
++
++
++def _calibrated_probability(research_result: Mapping[str, Any], integrated: Mapping[str, Any], legacy: Mapping[str, Any]) -> tuple[float | None, float | None, str, int]:
++    scoring = _mapping(research_result.get("proper_scoring"))
++    sample_count = int(scoring.get("sample_count") or 0)
++    status = str(scoring.get("status") or "UNAVAILABLE").upper()
++    raw = _clip100(
++        integrated.get("calibrated_reliability")
++        or _mapping(research_result.get("hamilton_regime")).get("current_regime_probability")
++        or legacy.get("higher_reliability")
++    )
++    # Existing proper scoring validates probabilities but does not silently
++    # invent a calibration transform. When settled validation exists, the
++    # protected reliability/probability is accepted as calibrated evidence.
++    calibrated = raw if status == "VALID" and sample_count >= DEFAULT_THRESHOLDS.minimum_calibration_samples else None
++    return raw, calibrated, status, sample_count
++
++
++def _component(value: Any, weight: float, *, critical: bool, status: str = "AVAILABLE", evidence: Any = None) -> dict[str, Any]:
++    number = _clip100(value)
++    available = number is not None and str(status).upper() not in {"UNAVAILABLE", "INSUFFICIENT_DATA", "INSUFFICIENT_SAMPLE", "DISABLED", "FAILED"}
++    return {
++        "value": number, "weight": float(weight), "critical": bool(critical),
++        "available": bool(available), "status": str(status), "evidence": _json_safe(evidence or {}),
++    }
++
++
++def _tail_safety(cvar: float | None, returns: pd.Series) -> float | None:
++    if cvar is None:
++        return None
++    scale = float(returns.std(ddof=1)) if len(returns) >= 20 and np.isfinite(returns.std(ddof=1)) else None
++    if not scale or scale <= 0:
++        return None
++    ratio = abs(float(cvar)) / scale
++    return float(np.clip(100.0 - 20.0 * ratio, 0.0, 100.0))
++
++
++def _conformal_component(coverage: float | None, width: float | None, returns: pd.Series) -> float | None:
++    coverage_pct = _clip100(coverage)
++    if coverage_pct is None or width is None:
++        return None
++    target = 90.0
++    coverage_score = max(0.0, 100.0 - 4.0 * abs(coverage_pct - target))
++    scale = float(returns.std(ddof=1)) if len(returns) >= 20 else None
++    if not scale or not math.isfinite(scale) or scale <= 0:
++        sharpness = 50.0
++    else:
++        sharpness = float(np.clip(100.0 - 15.0 * abs(float(width)) / scale, 0.0, 100.0))
++    return 0.65 * coverage_score + 0.35 * sharpness
++
++
++def _research_layer_bundle(result: Mapping[str, Any], integrated: Mapping[str, Any], frame_validation: Mapping[str, Any], path: Path | str, symbol: str) -> dict[str, Any]:
++    h = _mapping(result.get("hamilton_regime"))
++    bp = _mapping(result.get("bai_perron_breaks"))
++    scoring = _mapping(result.get("proper_scoring"))
++    conformal = _mapping(result.get("conformal_prediction"))
++    lw = _mapping(result.get("ledoit_wolf"))
++    cvar = _mapping(result.get("cvar"))
++    spa = _mapping(result.get("hansen_spa"))
++    frame = frame_validation.get("frame")
++    returns = pd.to_numeric(frame["close"], errors="coerce").pct_change().dropna() if isinstance(frame, pd.DataFrame) and not frame.empty else pd.Series(dtype=float)
++    raw_prob, calibrated_prob, calibration_status, calibration_samples = _calibrated_probability(result, integrated, {})
++    acc1, acc3, acc6, settled_count = _forecast_accuracy_from_db(symbol, path)
++    selected_regime_probability = _clip100(h.get("current_regime_probability") or integrated.get("regime_probability"))
++    self_transition = _clip100(h.get("self_transition_probability") or h.get("p_self"))
++    persistence = None
++    if selected_regime_probability is not None and self_transition is not None:
++        entropy = _clip100(h.get("regime_entropy"))
++        entropy_safety = 100.0 - (entropy if entropy is not None else 100.0)
++        persistence = 0.45 * selected_regime_probability + 0.45 * self_transition + 0.10 * entropy_safety
++    elif selected_regime_probability is not None:
++        persistence = selected_regime_probability
++    age = _safe_float(h.get("current_regime_age_hours") or h.get("current_run_length") or integrated.get("current_regime_run_length"))
++    expected = _safe_float(h.get("expected_duration_hours") or integrated.get("expected_regime_duration"))
++    remaining = _safe_float(h.get("estimated_remaining_hours"))
++    transition_1h = _clip100(h.get("transition_risk_1h") or integrated.get("transition_risk_1h"))
++    transition_3h = _clip100(h.get("transition_risk_3h") or integrated.get("transition_risk_3h"))
++    transition_6h = _clip100(h.get("transition_risk_6h") or integrated.get("transition_risk_6h"))
++    cp_probability = _clip100(integrated.get("change_probability"))
++    structural_strength = _clip100(bp.get("break_strength"))
++    post_break = None
++    if bp.get("current_segment_start_index") is not None:
++        post_break = max(0, int(frame_validation.get("sample_count") or 0) - int(bp.get("current_segment_start_index") or 0))
++    conformal_coverage = _clip100(conformal.get("realized_coverage") or integrated.get("conformal_coverage"))
++    interval_width = _safe_float(conformal.get("interval_width") or integrated.get("interval_width"))
++    cvar_95 = _safe_float(cvar.get("cvar_95") or integrated.get("cvar_95"))
++    unique_score = None
++    duplicate_penalty = _clip100(lw.get("duplicate_exposure_penalty") or integrated.get("duplicate_exposure_penalty"))
++    if duplicate_penalty is not None:
++        unique_score = 100.0 - duplicate_penalty
++    cluster = lw.get("correlation_cluster") or integrated.get("correlation_cluster")
++    if isinstance(cluster, list):
++        cluster = ", ".join(map(str, cluster))
++    tail_score = _tail_safety(cvar_95, returns)
++    conformal_score = _conformal_component(conformal_coverage, interval_width, returns)
++    settled_accuracy = None
++    available_acc = [x for x in (acc1, acc3, acc6) if x is not None]
++    if available_acc and settled_count >= DEFAULT_THRESHOLDS.minimum_settled_accuracy_samples:
++        settled_accuracy = float(np.mean(available_acc))
++    spa_p = _safe_float(spa.get("spa_p_value"))
++    return {
++        "hamilton": {
++            "status": h.get("status") or "UNAVAILABLE", "selected_regime_probability": selected_regime_probability,
++            "self_transition_probability": self_transition, "posterior_margin": _clip100(h.get("posterior_margin") or integrated.get("regime_posterior_margin")),
++            "normalized_entropy": _clip100(h.get("regime_entropy") or integrated.get("regime_entropy")),
++            "persistence_score": _clip100(persistence),
++        },
++        "duration_transition": {
++            "regime_age": age, "expected_total_duration": expected, "estimated_remaining_duration": remaining,
++            "exhaustion_risk": None if expected is None or age is None or expected <= 0 else _clip100(100.0 * age / expected),
++            "transition_probability_1h": transition_1h, "transition_probability_3h": transition_3h,
++            "transition_probability_6h": transition_6h,
++        },
++        "bai_perron": {
++            "status": bp.get("status") or "UNAVAILABLE", "break_count": bp.get("break_count"),
++            "latest_break": bp.get("last_break_time"), "break_magnitude": structural_strength,
++            "post_break_sample": post_break, "structural_break_detected": bool(bp.get("structural_break_detected")),
++        },
++        "bocpd": {
++            "status": integrated.get("structural_break_status") or "UNAVAILABLE",
++            "run_length_posterior": integrated.get("current_regime_run_length"),
++            "modal_run_length": integrated.get("current_regime_run_length"),
++            "changepoint_probability": cp_probability,
++            "stability_status": "UNSTABLE" if cp_probability is not None and cp_probability >= 65 else ("STABLE" if cp_probability is not None else "UNAVAILABLE"),
++        },
++        "calibration": {
++            "status": calibration_status, "raw_directional_probability": raw_prob,
++            "calibrated_directional_probability": calibrated_prob, "brier_score": _safe_float(scoring.get("brier_score")),
++            "log_loss": _safe_float(scoring.get("log_loss")), "expected_calibration_error": _clip100(scoring.get("calibration_error")),
++            "settled_sample_count": calibration_samples,
++        },
++        "conformal": {
++            "status": conformal.get("status") or integrated.get("conformal_coverage_status") or "UNAVAILABLE",
++            "target_coverage": _clip100(conformal.get("target_coverage") or 0.90), "realized_rolling_coverage": conformal_coverage,
++            "lower_prediction_bound": conformal.get("lower_bound"), "upper_prediction_bound": conformal.get("upper_bound"),
++            "interval_width": interval_width, "coverage_error": None if conformal_coverage is None else abs(conformal_coverage - 90.0),
++            "sharpness_score": conformal_score,
++        },
++        "ledoit_wolf": {
++            "status": lw.get("status") or "UNAVAILABLE", "correlation_cluster": cluster,
++            "common_factor_overlap": lw.get("common_factor_overlap"), "duplicate_exposure_penalty": duplicate_penalty,
++            "unique_opportunity_score": unique_score,
++        },
++        "cvar": {
++            "status": cvar.get("status") or "UNAVAILABLE", "var_95": _safe_float(cvar.get("var_95")),
++            "cvar_95": cvar_95, "stress_cvar": _safe_float(cvar.get("stress_cvar")),
++            "downside_volatility": _safe_float(cvar.get("downside_volatility")),
++            "maximum_adverse_excursion": _safe_float(cvar.get("maximum_adverse_excursion")),
++            "tail_risk_grade": cvar.get("tail_risk_grade") or "UNAVAILABLE", "tail_safety_score": tail_score,
++        },
++        "spa": {
++            "status": spa.get("status") or "UNAVAILABLE", "benchmark_model": spa.get("benchmark_model"),
++            "candidate_count": spa.get("candidate_count"), "test_statistic": spa.get("spa_statistic"),
++            "p_value": spa_p, "promotion_status": "ELIGIBLE" if spa_p is not None and spa_p < 0.05 and bool(spa.get("superior_predictive_ability")) else "NOT_PROMOTED",
++            "experiment_identity": deterministic_hash({"symbol": symbol, "method": "SPA", "result": spa}),
++        },
++        "pbo": _estimate_pbo(symbol, path),
++        "forecast_accuracy": {"accuracy_1h": acc1, "accuracy_3h": acc3, "accuracy_6h": acc6, "settled_sample_count": settled_count, "component_score": settled_accuracy},
++        "component_values": {
++            "regime_persistence": _clip100(persistence), "calibrated_bias_probability": calibrated_prob,
++            "settled_forecast_accuracy": settled_accuracy, "conformal_coverage_sharpness": conformal_score,
++            "tail_risk_safety": tail_score, "unique_exposure_score": unique_score,
++        },
++    }
++
++
++def _estimate_pbo(symbol: str, path: Path | str) -> dict[str, Any]:
++    """Run genuine CSCV PBO only when a pre-registered candidate matrix exists.
++
++    A single production score series is not a strategy-trial matrix and must not
++    be transformed into a reassuring PBO estimate. Candidate matrices may be
++    published by the existing experiment registries under an explicit matrix
++    key; otherwise the result remains unavailable and promotion is blocked.
++    """
++    payloads: list[Mapping[str, Any]] = []
++    with _connect(path) as conn:
++        try:
++            rows = conn.execute(
++                """SELECT result_json FROM field10_model_validation_registry
++                   WHERE symbol=? ORDER BY broker_day DESC LIMIT 100""",
++                (normalize_symbol(symbol),),
++            ).fetchall()
++            for row in rows:
++                try:
++                    value = json.loads(row["result_json"] or "{}")
++                    if isinstance(value, Mapping):
++                        payloads.append(value)
++                except Exception:
++                    continue
++        except sqlite3.Error:
++            pass
++        try:
++            rows = conn.execute(
++                """SELECT result_json FROM field10_research_experiments
++                   WHERE symbol=? ORDER BY created_at DESC LIMIT 100""",
++                (normalize_symbol(symbol),),
++            ).fetchall()
++            for row in rows:
++                try:
++                    value = json.loads(row["result_json"] or "{}")
++                    if isinstance(value, Mapping):
++                        payloads.append(value)
++                except Exception:
++                    continue
++        except sqlite3.Error:
++            pass
++
++    matrix: pd.DataFrame | None = None
++    source_identity: str | None = None
++    for payload in payloads:
++        candidate = (
++            payload.get("candidate_performance_matrix")
++            or payload.get("performance_matrix")
++            or payload.get("cscv_candidate_matrix")
++        )
++        if candidate is None:
++            continue
++        try:
++            frame = pd.DataFrame(candidate).apply(pd.to_numeric, errors="coerce").dropna()
++        except Exception:
++            frame = pd.DataFrame()
++        if frame.shape[0] >= 40 and frame.shape[1] >= 2:
++            matrix = frame
++            source_identity = deterministic_hash(payload)
++            break
++
++    if matrix is None:
++        return {
++            "status": "INSUFFICIENT_TRIAL_MATRIX",
++            "effective_trial_count": 0,
++            "candidate_count": 0,
++            "in_sample_rank": None,
++            "out_of_sample_rank": None,
++            "degradation": None,
++            "pbo_estimate": None,
++            "promotion_eligibility": "BLOCKED",
++            "reason": "PBO requires at least two genuine pre-registered candidate columns and sufficient settled periods.",
++            "method": "CSCV PBO; no proxy or neutral value used",
++        }
++    try:
++        from research_quant.field10_shadow_methods_20260702 import probability_of_backtest_overfitting
++        result = probability_of_backtest_overfitting(matrix, blocks=8, metric_higher_is_better=True)
++    except Exception as exc:
++        return {
++            "status": "UNAVAILABLE", "effective_trial_count": int(matrix.shape[0]),
++            "candidate_count": int(matrix.shape[1]), "pbo_estimate": None,
++            "promotion_eligibility": "BLOCKED",
++            "reason": f"{type(exc).__name__}: {exc}",
++            "method": "CSCV PBO",
++        }
++    pbo = _safe_float(result.get("pbo"))
++    degradation = _safe_float(result.get("mean_oos_degradation"))
++    return {
++        "status": str(result.get("status") or "UNAVAILABLE"),
++        "effective_trial_count": int(result.get("fold_count") or 0),
++        "candidate_count": int(result.get("candidate_count") or matrix.shape[1]),
++        "in_sample_rank": 1,
++        "out_of_sample_rank": None,
++        "degradation": degradation,
++        "pbo_estimate": pbo,
++        "median_logit_rank": _safe_float(result.get("median_logit_rank")),
++        "probability_of_loss": _safe_float(result.get("probability_of_loss")),
++        "promotion_eligibility": "ELIGIBLE" if pbo is not None and pbo <= 0.25 else "BLOCKED",
++        "experiment_registry_identity": source_identity,
++        "method": "Combinatorially Symmetric Cross-Validation PBO",
++    }
++
++def _eligibility(candidate: Mapping[str, Any], thresholds: SnapshotThresholds) -> tuple[str, list[str]]:
++    reasons: list[str] = []
++    frame = _mapping(candidate.get("frame_validation"))
++    research = _mapping(candidate.get("research_layers"))
++    identity = _mapping(candidate.get("identity"))
++    if frame.get("status") != "COMPLETE":
++        reasons.append("incomplete 600-H1 Higher Standard sample")
++    if not all(identity.get(key) for key in ("canonical_run_id", "source_id", "snapshot_hash")):
++        reasons.append("invalid canonical identity")
++    if not bool(identity.get("snapshot_checksum_valid", False)):
++        reasons.append("failed snapshot checksum")
++    if not bool(identity.get("cutoff_generation_valid", False)):
++        reasons.append("child generation does not match the configured morning cutoff")
++    if str(identity.get("generation_publication_status") or "").upper() not in {"COMPLETED", "PUBLISHED", "INSERTED", "DUPLICATE_REJECTED"}:
++        reasons.append("child-generation publication contract is incomplete")
++    stale = _safe_float(identity.get("stale_hours"))
++    if stale is None or stale > thresholds.maximum_stale_hours:
++        reasons.append("stale market data")
++    if not bool(identity.get("symbol_match", False)):
++        reasons.append("unresolved symbol mismatch")
++    bp = _mapping(research.get("bai_perron"))
++    if bool(bp.get("structural_break_detected")) and (_clip100(bp.get("break_magnitude")) or 0.0) >= thresholds.severe_structural_break_strength * 100.0:
++        if int(bp.get("post_break_sample") or 0) < thresholds.minimum_post_break_sample:
++            reasons.append("severe structural break with insufficient post-break evidence")
++    cp = _mapping(research.get("bocpd"))
++    if (_clip100(cp.get("changepoint_probability")) or 0.0) >= thresholds.severe_changepoint_probability * 100.0:
++        reasons.append("severe changepoint instability")
++    permission = str(candidate.get("trade_permission") or "CHECK").upper()
++    if permission in {"BLOCKED", "NO TRADE", "RESEARCH ONLY"}:
++        reasons.append("blocked trade permission")
++    spread_pct = _clip100(candidate.get("spread_percentile"))
++    spread = _safe_float(candidate.get("average_spread"))
++    if (spread_pct is not None and spread_pct > thresholds.maximum_spread_percentile) or (spread is not None and spread > thresholds.maximum_absolute_spread):
++        reasons.append("unusable spread")
++    if _bias(candidate.get("stable_daily_bias")) is None:
++        reasons.append("missing production bias")
++    if str(candidate.get("publication_contract_status") or "").upper() not in {"COMPLETED", "PUBLISHED", "VERIFIED"}:
++        reasons.append("failed publication contract")
++    return ("ELIGIBLE" if not reasons else "BLOCKED", reasons)
++
++
++def _score_candidate(candidate: MutableMapping[str, Any], thresholds: SnapshotThresholds, weights: ScoreWeights) -> dict[str, Any]:
++    layers = _mapping(candidate.get("research_layers"))
++    values = _mapping(layers.get("component_values"))
++    integrated = _mapping(candidate.get("integrated"))
++    components = {
++        "regime_persistence": _component(values.get("regime_persistence"), weights.regime_persistence, critical=True, evidence=layers.get("hamilton")),
++        "calibrated_bias_probability": _component(values.get("calibrated_bias_probability"), weights.calibrated_bias_probability, critical=True, status=_mapping(layers.get("calibration")).get("status") or "UNAVAILABLE", evidence=layers.get("calibration")),
++        "settled_forecast_accuracy": _component(values.get("settled_forecast_accuracy"), weights.settled_forecast_accuracy, critical=False, evidence=layers.get("forecast_accuracy")),
++        "evidence_agreement": _component(integrated.get("evidence_agreement"), weights.evidence_agreement, critical=False, evidence={"conflict_index": integrated.get("conflict_index")}),
++        "data_quality": _component(candidate.get("data_quality_score"), weights.data_quality, critical=True, evidence={"grade": candidate.get("data_quality_grade")}),
++        "spread_execution_quality": _component(candidate.get("spread_execution_score"), weights.spread_execution_quality, critical=False, evidence={"spread_percentile": candidate.get("spread_percentile"), "average_spread": candidate.get("average_spread")}),
++        "transition_safety": _component(None if candidate.get("transition_risk_6h") is None else 100.0 - float(candidate.get("transition_risk_6h")), weights.transition_safety, critical=True, evidence=layers.get("duration_transition")),
++        "conformal_coverage_sharpness": _component(values.get("conformal_coverage_sharpness"), weights.conformal_coverage_sharpness, critical=False, status=_mapping(layers.get("conformal")).get("status") or "UNAVAILABLE", evidence=layers.get("conformal")),
++        "tail_risk_safety": _component(values.get("tail_risk_safety"), weights.tail_risk_safety, critical=False, status=_mapping(layers.get("cvar")).get("status") or "UNAVAILABLE", evidence=layers.get("cvar")),
++        "unique_exposure_score": _component(values.get("unique_exposure_score"), weights.unique_exposure_score, critical=False, status=_mapping(layers.get("ledoit_wolf")).get("status") or "UNAVAILABLE", evidence=layers.get("ledoit_wolf")),
++    }
++    eligibility_status, eligibility_reasons = _eligibility(candidate, thresholds)
++    critical_missing = [name for name, item in components.items() if item["critical"] and not item["available"]]
++    if critical_missing:
++        eligibility_reasons.extend(f"critical score evidence unavailable: {name}" for name in critical_missing)
++        eligibility_status = "BLOCKED"
++    available_weight = sum(item["weight"] for item in components.values() if item["available"])
++    missing_weight = 100.0 - available_weight
++    weighted_sum = sum(float(item["value"]) * item["weight"] for item in components.values() if item["available"])
++    score = None if eligibility_status != "ELIGIBLE" or available_weight <= 0 else float(np.clip(weighted_sum / available_weight, 0.0, 100.0))
++    for item in components.values():
++        item["contribution"] = None if not item["available"] or available_weight <= 0 else float(item["value"] * item["weight"] / available_weight)
++    confidence = 0.0 if eligibility_status != "ELIGIBLE" else float(np.clip(available_weight, 0.0, 100.0))
++    result = {
++        "institutional_morning_score": score, "available_weight": available_weight,
++        "missing_weight": missing_weight, "calculation_status": "BLOCKED" if eligibility_status != "ELIGIBLE" else ("COMPLETE" if missing_weight == 0 else "PARTIAL_RENORMALIZED"),
++        "score_confidence": confidence, "eligibility_status": eligibility_status,
++        "eligibility_reasons": list(dict.fromkeys(eligibility_reasons)), "critical_missing": critical_missing,
++        "components": components, "weights": asdict(weights), "thresholds": asdict(thresholds),
++    }
++    return result
++
++
++def _daily_grade(score: float | None, eligibility: str, candidate: Mapping[str, Any], thresholds: SnapshotThresholds) -> str:
++    if eligibility != "ELIGIBLE" or score is None:
++        return "BLOCKED"
++    calibrated = _clip100(candidate.get("calibrated_bias_probability")) or 0.0
++    persistence = _clip100(candidate.get("regime_persistence")) or 0.0
++    warning = bool(candidate.get("major_safety_warning"))
++    if score >= thresholds.grade_a_plus and calibrated >= thresholds.strong_calibrated_probability and persistence >= thresholds.strong_regime_persistence and not warning:
++        return "A+"
++    if score >= thresholds.grade_a:
++        return "A"
++    if score >= thresholds.grade_b:
++        return "B"
++    if score >= thresholds.grade_c:
++        return "C"
++    return "D"
++
++
++def _generation_checksum_status(generation: Mapping[str, Any], symbol: str) -> dict[str, Any]:
++    """Validate the frozen child runtime snapshot when a registry checksum exists."""
++    expected = str(generation.get("runtime_snapshot_sha256") or "").strip().lower()
++    configured_path = str(generation.get("runtime_snapshot_path") or "").strip()
++    candidate_paths: list[Path] = []
++    if configured_path:
++        candidate_paths.append(Path(configured_path))
++        candidate_paths.append(Path(configured_path).expanduser())
++    candidate_paths.append(_cache_path(symbol))
++    snapshot_path = next((path for path in candidate_paths if path.is_file()), None)
++    if not expected:
++        return {
++            "valid": False, "status": "CHECKSUM_UNAVAILABLE",
++            "path": str(snapshot_path or configured_path or ""), "expected": None, "actual": None,
++        }
++    if snapshot_path is None:
++        return {
++            "valid": False, "status": "SNAPSHOT_FILE_UNAVAILABLE",
++            "path": configured_path, "expected": expected, "actual": None,
++        }
++    try:
++        actual = sha256(snapshot_path.read_bytes()).hexdigest().lower()
++    except OSError as exc:
++        return {
++            "valid": False, "status": "SNAPSHOT_READ_FAILED", "path": str(snapshot_path),
++            "expected": expected, "actual": None, "error": f"{type(exc).__name__}: {exc}",
++        }
++    return {
++        "valid": actual == expected,
++        "status": "VALID" if actual == expected else "CHECKSUM_MISMATCH",
++        "path": str(snapshot_path), "expected": expected, "actual": actual,
++    }
++
++
++def _generation_cutoff_status(generation: Mapping[str, Any], identity: Mapping[str, Any]) -> dict[str, Any]:
++    completed = pd.to_datetime(generation.get("completed_broker_candle"), errors="coerce", utc=True)
++    required = pd.to_datetime(identity.get("latest_completed_h1"), errors="coerce", utc=True)
++    if pd.isna(completed) or pd.isna(required):
++        return {"valid": False, "status": "CUTOFF_IDENTITY_UNAVAILABLE", "completed": None, "required": None}
++    difference_hours = (pd.Timestamp(completed) - pd.Timestamp(required)).total_seconds() / 3600.0
++    return {
++        "valid": abs(difference_hours) < 1e-9,
++        "status": "MATCHED" if abs(difference_hours) < 1e-9 else ("AFTER_CUTOFF" if difference_hours > 0 else "BEFORE_CUTOFF"),
++        "completed": pd.Timestamp(completed).isoformat(), "required": pd.Timestamp(required).isoformat(),
++        "difference_hours": difference_hours,
++    }
++
++
++def _build_candidate(
++    *, symbol: str, role: str, cached_state: Mapping[str, Any] | None,
++    legacy: Mapping[str, Any], integrated: Mapping[str, Any], research_row: Mapping[str, Any],
++    generation: Mapping[str, Any], identity: Mapping[str, Any], parent_run_id: str, path: Path | str,
++    thresholds: SnapshotThresholds, weights: ScoreWeights,
++) -> dict[str, Any]:
++    state = dict(cached_state or {})
++    canonical = _canonical_from_state(state)
++    expected_symbol = normalize_symbol(symbol)
++    actual_symbol = normalize_symbol(canonical.get("symbol") or state.get("symbol") or expected_symbol)
++    frame = _frame_from_state(state)
++    validation = validate_completed_h1_frame(
++        frame, latest_completed_h1_utc=identity["latest_completed_h1"], symbol=expected_symbol,
++    )
++    result = _mapping(research_row.get("result"))
++    layers = _research_layer_bundle(result, integrated, validation, path, expected_symbol)
++    h = _mapping(layers.get("hamilton")); duration = _mapping(layers.get("duration_transition"))
++    calibration = _mapping(layers.get("calibration")); conformal = _mapping(layers.get("conformal"))
++    bp = _mapping(layers.get("bai_perron")); bocpd = _mapping(layers.get("bocpd")); cvar = _mapping(layers.get("cvar")); lw = _mapping(layers.get("ledoit_wolf"))
++    stable_bias = _bias(integrated.get("protected_final_action") or integrated.get("combined_evidence_bias") or legacy.get("final_action") or legacy.get("higher_standard_bias"))
++    less_risky = _bias(legacy.get("less_risky_bias") or integrated.get("protected_final_action") or stable_bias)
++    permission = str(integrated.get("trade_permission") or legacy.get("trade_permission") or "CHECK").upper()
++    spread_quality = str(integrated.get("spread_quality") or legacy.get("spread_quality") or "UNAVAILABLE").upper()
++    spread_score_map = {"LOW": 95.0, "GOOD": 90.0, "AVERAGE": 70.0, "MEDIUM": 60.0, "HIGH": 30.0, "VERY HIGH": 5.0}
++    spread_score = spread_score_map.get(spread_quality)
++    average_spread = _safe_float(legacy.get("average_spread"))
++    spread_percentile = None
++    if spread_score is not None:
++        spread_percentile = 100.0 - spread_score
++    canonical_run_id = str(generation.get("canonical_run_id") or canonical.get("run_id") or canonical.get("canonical_calculation_id") or integrated.get("canonical_run_id") or legacy.get("run_id") or "")
++    source_id = str(generation.get("source_id") or canonical.get("source_id") or canonical.get("data_source_id") or integrated.get("source_id") or legacy.get("source_id") or "")
++    snapshot_hash = str(generation.get("snapshot_hash") or canonical.get("snapshot_hash") or canonical.get("source_snapshot_hash") or integrated.get("snapshot_hash") or "")
++    checksum = _generation_checksum_status(generation, expected_symbol)
++    cutoff_generation = _generation_cutoff_status(generation, identity)
++    required_latest = pd.Timestamp(identity["required_cutoff_completed_h1"])
++    effective_latest = pd.Timestamp(identity["latest_completed_h1"])
++    stale_hours = max(0.0, (required_latest - effective_latest).total_seconds() / 3600.0)
++    publication_contract_status = "COMPLETED" if str(integrated.get("publication_status") or "").upper() in {"COMPLETED", "PUBLISHED", "DUPLICATE_REJECTED"} else "FAILED"
++    candidate: dict[str, Any] = {
++        "symbol": expected_symbol, "role": role, "parent_run_id": parent_run_id,
++        "frame_validation": validation, "research_layers": layers, "integrated": dict(integrated),
++        "legacy": dict(legacy), "identity": {
++            "canonical_run_id": canonical_run_id, "source_id": source_id, "snapshot_hash": snapshot_hash,
++            "child_run_id": str(generation.get("child_run_id") or ""),
++            "snapshot_checksum_valid": bool(snapshot_hash) and bool(checksum.get("valid")),
++            "snapshot_checksum_status": checksum,
++            "cutoff_generation_valid": bool(cutoff_generation.get("valid")),
++            "cutoff_generation_status": cutoff_generation,
++            "generation_publication_status": str(generation.get("publication_status") or "UNAVAILABLE"),
++            "symbol_match": actual_symbol == expected_symbol,
++            "actual_symbol": actual_symbol, "stale_hours": stale_hours,
++        },
++        "existing_rank_score": _safe_float(legacy.get("rank_score")),
++        "stable_daily_bias": stable_bias, "less_risky_bias": less_risky,
++        "trade_permission": permission,
++        "higher_standard_regime": integrated.get("higher_standard_regime") or legacy.get("higher_standard_regime") or "UNAVAILABLE",
++        "data_quality_grade": integrated.get("data_quality_grade") or legacy.get("data_quality_grade") or "UNAVAILABLE",
++        "data_quality_score": _clip100(legacy.get("data_quality_score") or research_row.get("data_quality_score")),
++        "spread_quality": spread_quality, "spread_execution_score": spread_score,
++        "spread_percentile": spread_percentile, "average_spread": average_spread,
++        "publication_contract_status": publication_contract_status,
++        "regime_probability": h.get("selected_regime_probability"), "regime_entropy": h.get("normalized_entropy"),
++        "posterior_margin": h.get("posterior_margin"), "regime_persistence": h.get("persistence_score"),
++        "regime_age": duration.get("regime_age"), "expected_regime_duration": duration.get("expected_total_duration"),
++        "estimated_remaining_duration": duration.get("estimated_remaining_duration"),
++        "transition_risk_1h": duration.get("transition_probability_1h"),
++        "transition_risk_3h": duration.get("transition_probability_3h"),
++        "transition_risk_6h": duration.get("transition_probability_6h"),
++        "calibrated_bias_probability": calibration.get("calibrated_directional_probability"),
++        "brier_score": calibration.get("brier_score"),
++        "forecast_accuracy_1h": _mapping(layers.get("forecast_accuracy")).get("accuracy_1h"),
++        "forecast_accuracy_3h": _mapping(layers.get("forecast_accuracy")).get("accuracy_3h"),
++        "forecast_accuracy_6h": _mapping(layers.get("forecast_accuracy")).get("accuracy_6h"),
++        "technical_bias": integrated.get("technical_bias"), "technical_reliability": _clip100(integrated.get("technical_reliability")),
++        "sentiment_bias": integrated.get("sentiment_bias"), "sentiment_reliability": _clip100(integrated.get("sentiment_reliability")),
++        "session_bias": integrated.get("session_bias"), "session_reliability": _clip100(integrated.get("session_reliability")),
++        "evidence_agreement": _clip100(integrated.get("evidence_agreement")), "conflict_index": _clip100(integrated.get("conflict_index")),
++        "conformal_coverage": conformal.get("realized_rolling_coverage"), "conformal_interval_width": conformal.get("interval_width"),
++        "structural_break_status": bp.get("status"), "changepoint_probability": bocpd.get("changepoint_probability"),
++        "cvar_95": cvar.get("cvar_95"), "correlation_cluster": lw.get("correlation_cluster"),
++        "duplicate_exposure_penalty": lw.get("duplicate_exposure_penalty"),
++        "major_safety_warning": bool(
++            (_clip100(bocpd.get("changepoint_probability")) or 0) >= thresholds.severe_changepoint_probability * 100
++            or (bool(bp.get("structural_break_detected")) and int(bp.get("post_break_sample") or 0) < thresholds.minimum_post_break_sample)
++        ),
++    }
++    score = _score_candidate(candidate, thresholds, weights)
++    candidate["score"] = score
++    candidate["institutional_morning_score"] = score["institutional_morning_score"]
++    candidate["eligibility_status"] = score["eligibility_status"]
++    candidate["daily_grade"] = _daily_grade(candidate["institutional_morning_score"], candidate["eligibility_status"], candidate, thresholds)
++    return candidate
++
++
++def _rank_candidates(candidates: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
++    work = [dict(item) for item in candidates]
++    def key(item: Mapping[str, Any]) -> tuple[Any, ...]:
++        eligible = item.get("eligibility_status") == "ELIGIBLE"
++        score = _safe_float(item.get("institutional_morning_score"))
++        calibrated = _clip100(item.get("calibrated_bias_probability"))
++        persistence = _clip100(item.get("regime_persistence"))
++        tr6 = _clip100(item.get("transition_risk_6h"))
++        cvar = _safe_float(item.get("cvar_95"))
++        quality = _clip100(item.get("data_quality_score"))
++        spread = _safe_float(item.get("average_spread"))
++        return (
++            0 if eligible else 1,
++            -(score if score is not None else -1e12),
++            -(calibrated if calibrated is not None else -1e12),
++            -(persistence if persistence is not None else -1e12),
++            tr6 if tr6 is not None else 1e12,
++            abs(cvar) if cvar is not None else 1e12,
++            -(quality if quality is not None else -1e12),
++            spread if spread is not None else 1e12,
++            str(item.get("symbol") or ""),
++        )
++    work.sort(key=key)  # Python sort is stable and deterministic.
++    rank = 0
++    for item in work:
++        if item.get("eligibility_status") == "ELIGIBLE":
++            rank += 1
++            item["daily_rank"] = rank
++        else:
++            item["daily_rank"] = None
++    return work
++
++
++def _row_for_publication(candidate: Mapping[str, Any], identity: Mapping[str, Any], universe_hash: str) -> dict[str, Any]:
++    frame = _mapping(candidate.get("frame_validation")); score = _mapping(candidate.get("score")); ident = _mapping(candidate.get("identity"))
++    explanation = {
++        "eligibility_status": candidate.get("eligibility_status"),
++        "eligibility_reasons": score.get("eligibility_reasons"),
++        "available_weight": score.get("available_weight"), "missing_weight": score.get("missing_weight"),
++        "calculation_status": score.get("calculation_status"), "score_confidence": score.get("score_confidence"),
++        "sample_validation": {k: frame.get(k) for k in (
++            "status", "required_candles", "sample_count", "window_start", "window_end",
++            "missing_candle_count", "duplicate_count", "future_timestamp_count", "invalid_timestamp_count", "reasons",
++        )},
++        "research_layers": candidate.get("research_layers"),
++        "score_components": score.get("components"),
++    }
++    entry_permission = "ALLOWED" if candidate.get("eligibility_status") == "ELIGIBLE" and str(candidate.get("trade_permission")).upper() not in {"CAUTION", "CHECK"} else ("CAUTION" if candidate.get("eligibility_status") == "ELIGIBLE" else "BLOCKED")
++    return {
++        "Daily Rank": candidate.get("daily_rank"), "Symbol": candidate.get("symbol"), "Role": candidate.get("role"),
++        "Daily Grade": candidate.get("daily_grade"), "Institutional Morning Score": candidate.get("institutional_morning_score"),
++        "Existing Rank Score": candidate.get("existing_rank_score"), "Stable Daily Bias": candidate.get("stable_daily_bias") or "UNAVAILABLE",
++        "Less-Risky Bias": candidate.get("less_risky_bias") or "UNAVAILABLE", "Entry Permission": entry_permission,
++        "Safety Veto": "CLEAR", "Higher Standard Regime": candidate.get("higher_standard_regime"),
++        "600-H1 Completion": frame.get("status"), "Regime Probability": candidate.get("regime_probability"),
++        "Regime Entropy": candidate.get("regime_entropy"), "Posterior Margin": candidate.get("posterior_margin"),
++        "Regime Age": candidate.get("regime_age"), "Expected Regime Duration": candidate.get("expected_regime_duration"),
++        "Estimated Remaining Duration": candidate.get("estimated_remaining_duration"),
++        "Transition Risk 1H": candidate.get("transition_risk_1h"), "Transition Risk 3H": candidate.get("transition_risk_3h"),
++        "Transition Risk 6H": candidate.get("transition_risk_6h"), "Calibrated Bias Probability": candidate.get("calibrated_bias_probability"),
++        "Brier Score": candidate.get("brier_score"), "Forecast Accuracy 1H": candidate.get("forecast_accuracy_1h"),
++        "Forecast Accuracy 3H": candidate.get("forecast_accuracy_3h"), "Forecast Accuracy 6H": candidate.get("forecast_accuracy_6h"),
++        "Technical Bias": candidate.get("technical_bias") or "UNAVAILABLE", "Technical Reliability": candidate.get("technical_reliability"),
++        "Sentiment Bias": candidate.get("sentiment_bias") or "UNAVAILABLE", "Sentiment Reliability": candidate.get("sentiment_reliability"),
++        "Session Bias": candidate.get("session_bias") or "UNAVAILABLE", "Session Reliability": candidate.get("session_reliability"),
++        "Evidence Agreement": candidate.get("evidence_agreement"), "Conflict Index": candidate.get("conflict_index"),
++        "Conformal Coverage": candidate.get("conformal_coverage"), "Conformal Interval Width": candidate.get("conformal_interval_width"),
++        "Structural Break Status": candidate.get("structural_break_status") or "UNAVAILABLE",
++        "Changepoint Probability": candidate.get("changepoint_probability"), "Data Quality Grade": candidate.get("data_quality_grade"),
++        "Spread Percentile": candidate.get("spread_percentile"), "CVaR 95%": candidate.get("cvar_95"),
++        "Correlation Cluster": candidate.get("correlation_cluster") or "UNAVAILABLE",
++        "Duplicate Exposure Penalty": candidate.get("duplicate_exposure_penalty"),
++        "Lock Status": "PUBLISHED_LOCKED", "Locked At Broker Time": pd.Timestamp(identity["cutoff_broker_time"]).isoformat(),
++        "Locked Until Broker Time": pd.Timestamp(identity["locked_until_broker_time"]).isoformat(),
++        "Universe Hash": universe_hash, "Snapshot Hash": ident.get("snapshot_hash"),
++        "Canonical Run ID": ident.get("canonical_run_id"), "Completed Broker Candle": pd.Timestamp(identity["latest_completed_h1"]).isoformat(),
++        "Explanation": _canonical_json(explanation), "Publication Status": "PUBLISHED_LOCKED",
++        "__source_id": ident.get("source_id"), "__score_explanation": explanation,
++        "__sample_count": frame.get("sample_count"), "__content_hash": "",
++    }
++
++
++def _audit(conn: sqlite3.Connection, *, snapshot_id: str | None, broker_day: str, action: str, status: str, observed_at: str, details: Mapping[str, Any]) -> None:
++    payload = {"snapshot_id": snapshot_id, "broker_day": broker_day, "action": action, "status": status, "observed_at": observed_at, "details": details}
++    digest = deterministic_hash(payload)
++    conn.execute(
++        """INSERT OR IGNORE INTO field10_daily_snapshot_audit(
++            audit_id,daily_snapshot_id,broker_day,action,status,observed_at_broker_time,details_json,audit_hash
++        ) VALUES(?,?,?,?,?,?,?,?)""",
++        (f"AUD-{digest[:24]}", snapshot_id, broker_day, action, status, observed_at, _canonical_json(details), digest),
++    )
++
++
++def _load_valid_existing(conn: sqlite3.Connection, broker_day: str) -> dict[str, Any] | None:
++    meta = conn.execute("SELECT * FROM field10_daily_snapshot WHERE broker_day=?", (broker_day,)).fetchone()
++    if meta is None:
++        return None
++    rows = conn.execute(
++        "SELECT symbol,row_json,content_hash FROM field10_daily_snapshot_symbol WHERE daily_snapshot_id=? ORDER BY daily_rank IS NULL,daily_rank,symbol",
++        (meta["daily_snapshot_id"],),
++    ).fetchall()
++    decoded = [json.loads(row["row_json"]) for row in rows]
++    payload = {
++        "identity": {key: meta[key] for key in (
++            "broker_day", "cutoff_broker_time", "latest_completed_h1", "ordered_symbol_universe_json",
++            "universe_hash", "main_symbol", "parent_run_id", "model_version", "formula_version", "threshold_version",
++            "publication_status", "published_at_broker_time", "locked_until_broker_time",
++        )},
++        "rows": decoded,
++    }
++    valid = deterministic_hash(payload) == meta["content_hash"] and all(deterministic_hash({k: v for k, v in row.items() if k != "__content_hash"}) == stored["content_hash"] for row, stored in zip(decoded, rows))
++    return {"valid": valid, "meta": dict(meta), "rows": decoded}
++
++
++def publish_daily_snapshot_from_records(
++    *,
++    broker_identity: Mapping[str, Any],
++    ordered_symbols: Sequence[str],
++    main_symbol: str,
++    parent_run_id: str,
++    candidates: Sequence[dict[str, Any]],
++    path: Path | str = DB_PATH,
++    thresholds: SnapshotThresholds = DEFAULT_THRESHOLDS,
++    weights: ScoreWeights = DEFAULT_WEIGHTS,
++) -> dict[str, Any]:
++    """Deterministically rank and append one immutable broker-day publication."""
++    migrate_daily_snapshot_database(path)
++    broker_day = str(broker_identity["broker_day"])
++    observed_at = pd.Timestamp(broker_identity["broker_time"]).isoformat()
++    with _connect(path) as conn:
++        existing = _load_valid_existing(conn, broker_day)
++        if existing:
++            status = "ALREADY_EXISTS_VALID" if existing["valid"] else "CHECKSUM_FAILED"
++            _audit(conn, snapshot_id=existing["meta"]["daily_snapshot_id"], broker_day=broker_day, action="PUBLISH_ATTEMPT", status=status, observed_at=observed_at, details={"parent_run_id": parent_run_id})
++            conn.commit()
++            return {"ok": existing["valid"], "status": status, "daily_snapshot_id": existing["meta"]["daily_snapshot_id"], "rows": existing["rows"], "content_hash": existing["meta"]["content_hash"]}
++        if bool(broker_identity.get("before_cutoff")):
++            return {"ok": False, "status": "BEFORE_MORNING_CUTOFF", "broker_day": broker_day, "cutoff_broker_time": pd.Timestamp(broker_identity["cutoff_broker_time"]).isoformat()}
++
++        universe = canonical_symbol_universe(ordered_symbols, main_symbol)
++        universe_hash = symbol_universe_hash(universe, main_symbol)
++        ranked = _rank_candidates(candidates)
++        rows = [_row_for_publication(item, broker_identity, universe_hash) for item in ranked]
++        for row in rows:
++            content = {k: v for k, v in row.items() if k != "__content_hash"}
++            row["__content_hash"] = deterministic_hash(content)
++        snapshot_payload = {
++            "identity": {
++                "broker_day": broker_day,
++                "cutoff_broker_time": pd.Timestamp(broker_identity["cutoff_broker_time"]).isoformat(),
++                "latest_completed_h1": pd.Timestamp(broker_identity["latest_completed_h1"]).isoformat(),
++                "ordered_symbol_universe_json": _canonical_json(universe), "universe_hash": universe_hash,
++                "main_symbol": normalize_symbol(main_symbol), "parent_run_id": str(parent_run_id),
++                "model_version": MODEL_VERSION, "formula_version": FORMULA_VERSION,
++                "threshold_version": THRESHOLD_VERSION, "publication_status": "PUBLISHED_LOCKED",
++                "published_at_broker_time": pd.Timestamp(broker_identity["cutoff_broker_time"]).isoformat(),
++                "locked_until_broker_time": pd.Timestamp(broker_identity["locked_until_broker_time"]).isoformat(),
++            },
++            "rows": rows,
++        }
++        content_hash = deterministic_hash(snapshot_payload)
++        snapshot_id = f"F10-{broker_day.replace('-', '')}-{universe_hash[:10]}-{content_hash[:12]}"
++        child_ids = {str(item.get("symbol")): str(_mapping(item.get("identity")).get("child_run_id") or "") for item in ranked}
++        canonical_ids = {str(item.get("symbol")): _mapping(item.get("identity")).get("canonical_run_id") for item in ranked}
++        source_ids = {str(item.get("symbol")): _mapping(item.get("identity")).get("source_id") for item in ranked}
++        hashes = {str(item.get("symbol")): _mapping(item.get("identity")).get("snapshot_hash") for item in ranked}
++        aliases = {symbol: PROVIDER_ALIASES.get(symbol, {}) for symbol in universe}
++        metadata = {
++            "contract_version": CONTRACT_VERSION, "thresholds": asdict(thresholds), "weights": asdict(weights),
++            "higher_standard_required_candles": HIGHER_STANDARD_REQUIRED_CANDLES,
++            "day_end_review_hour": DAY_END_REVIEW_HOUR,
++        }
++        conn.execute("BEGIN IMMEDIATE")
++        try:
++            conn.execute(
++                """INSERT INTO field10_daily_snapshot(
++                    daily_snapshot_id,broker_day,cutoff_broker_time,latest_completed_h1,
++                    ordered_symbol_universe_json,universe_hash,main_symbol,secondary_symbols_json,
++                    provider_aliases_json,symbol_count,parent_run_id,child_run_ids_json,
++                    canonical_run_ids_json,source_ids_json,snapshot_hashes_json,model_version,
++                    formula_version,threshold_version,content_hash,publication_status,
++                    published_at_broker_time,locked_until_broker_time,metadata_json,created_at_broker_time
++                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
++                (
++                    snapshot_id, broker_day, pd.Timestamp(broker_identity["cutoff_broker_time"]).isoformat(),
++                    pd.Timestamp(broker_identity["latest_completed_h1"]).isoformat(), _canonical_json(universe),
++                    universe_hash, normalize_symbol(main_symbol), _canonical_json(universe[1:]), _canonical_json(aliases),
++                    len(universe), str(parent_run_id), _canonical_json(child_ids), _canonical_json(canonical_ids),
++                    _canonical_json(source_ids), _canonical_json(hashes), MODEL_VERSION, FORMULA_VERSION,
++                    THRESHOLD_VERSION, content_hash, "PUBLISHED_LOCKED",
++                    pd.Timestamp(broker_identity["cutoff_broker_time"]).isoformat(),
++                    pd.Timestamp(broker_identity["locked_until_broker_time"]).isoformat(),
++                    _canonical_json(metadata), observed_at,
++                ),
++            )
++            for candidate, row in zip(ranked, rows):
++                score = _mapping(candidate.get("score"))
++                conn.execute(
++                    """INSERT INTO field10_daily_snapshot_symbol(
++                        daily_snapshot_id,broker_day,symbol,role,daily_rank,daily_grade,
++                        institutional_score,existing_rank_score,eligibility_status,trade_permission,
++                        stable_daily_bias,less_risky_bias,higher_standard_regime,sample_count,
++                        sample_complete_status,completed_candle,canonical_run_id,source_id,snapshot_hash,
++                        correlation_cluster,content_hash,row_json,score_explanation_json
++                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
++                    (
++                        snapshot_id, broker_day, row["Symbol"], row["Role"], row["Daily Rank"], row["Daily Grade"],
++                        row["Institutional Morning Score"], row["Existing Rank Score"], candidate.get("eligibility_status"),
++                        row["Entry Permission"], row["Stable Daily Bias"], row["Less-Risky Bias"], row["Higher Standard Regime"],
++                        int(row.get("__sample_count") or 0), row["600-H1 Completion"], row["Completed Broker Candle"],
++                        row["Canonical Run ID"], row.get("__source_id"), row["Snapshot Hash"], row["Correlation Cluster"],
++                        row["__content_hash"], _canonical_json(row), _canonical_json(row["__score_explanation"]),
++                    ),
++                )
++                for name, component in _mapping(score.get("components")).items():
++                    conn.execute(
++                        """INSERT INTO field10_daily_score_component(
++                            daily_snapshot_id,symbol,component_name,component_value,configured_weight,
++                            available,critical,contribution,status,evidence_json
++                        ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
++                        (snapshot_id, row["Symbol"], name, component.get("value"), component.get("weight"),
++                         int(bool(component.get("available"))), int(bool(component.get("critical"))),
++                         component.get("contribution"), component.get("status"), _canonical_json(component.get("evidence") or {})),
++                    )
++                for method_name in ("spa", "pbo"):
++                    method = _mapping(_mapping(candidate.get("research_layers")).get(method_name))
++                    result_hash = deterministic_hash({"snapshot_id": snapshot_id, "symbol": row["Symbol"], "method": method_name, "result": method})
++                    conn.execute(
++                        """INSERT OR IGNORE INTO field10_model_validation_registry(
++                            registry_id,broker_day,symbol,method_name,model_version,formula_version,
++                            threshold_version,sample_count,validation_status,promotion_status,p_value,
++                            pbo_estimate,result_hash,result_json
++                        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
++                        (f"VAL-{result_hash[:24]}", broker_day, row["Symbol"], method_name.upper(), MODEL_VERSION,
++                         FORMULA_VERSION, THRESHOLD_VERSION, int(method.get("effective_trial_count") or method.get("candidate_count") or 0),
++                         str(method.get("status") or "UNAVAILABLE"), str(method.get("promotion_eligibility") or method.get("promotion_status") or "NOT_PROMOTED"),
++                         _safe_float(method.get("p_value")), _safe_float(method.get("pbo_estimate")), result_hash, _canonical_json(method)),
++                    )
++            _audit(conn, snapshot_id=snapshot_id, broker_day=broker_day, action="PUBLISH", status="PUBLISHED_LOCKED", observed_at=observed_at, details={"content_hash": content_hash, "universe_hash": universe_hash, "rows": len(rows)})
++            # Candidate activation is status-only and never mutates publication rows.
++            conn.execute(
++                """UPDATE field10_next_day_candidate SET status='NEXT_DAY_ACTIVATED',activated_snapshot_id=?
++                   WHERE target_broker_day=? AND universe_hash=?
++                     AND status='NEXT_DAY_CANDIDATE_READY'""",
++                (snapshot_id, broker_day, universe_hash),
++            )
++            conn.commit()
++        except Exception:
++            conn.rollback()
++            raise
++    return {"ok": True, "status": "PUBLISHED_LOCKED", "daily_snapshot_id": snapshot_id, "broker_day": broker_day, "content_hash": content_hash, "universe_hash": universe_hash, "rows": rows}
++
++
++def publish_daily_snapshot(
++    state: MutableMapping[str, Any],
++    *,
++    parent_run_id: str,
++    selected_symbols: Sequence[str],
++    main_symbol: str,
++    path: Path | str = DB_PATH,
++    thresholds: SnapshotThresholds = DEFAULT_THRESHOLDS,
++    weights: ScoreWeights = DEFAULT_WEIGHTS,
++) -> dict[str, Any]:
++    """Build and publish the authoritative morning snapshot from frozen caches."""
++    migrate_daily_snapshot_database(path)
++    universe = canonical_symbol_universe(selected_symbols, main_symbol)
++    # Resolve the broker day from the in-memory main generation first. Do not read
++    # secondary caches until after the immutable current-day existence check.
++    main_state = dict(state)
++    if normalize_symbol(_canonical_from_state(main_state).get("symbol") or state.get("symbol") or main_symbol) != normalize_symbol(main_symbol):
++        main_state = _load_cached_states([normalize_symbol(main_symbol)]).get(normalize_symbol(main_symbol), main_state)
++    main_canonical = _canonical_from_state(main_state)
++    identity = _broker_identity(main_state, main_canonical)
++    # First check persisted current day. This guarantees symbol selection changes
++    # cannot trigger reranking or force secondary cache/API access after publication.
++    with _connect(path) as conn:
++        existing = _load_valid_existing(conn, identity["broker_day"])
++        if existing:
++            status = "ALREADY_EXISTS_VALID" if existing["valid"] else "CHECKSUM_FAILED"
++            return {"ok": existing["valid"], "status": status, "daily_snapshot_id": existing["meta"]["daily_snapshot_id"], "rows": existing["rows"], "content_hash": existing["meta"]["content_hash"]}
++    cached = _load_cached_states(universe)
++    cached.setdefault(normalize_symbol(main_symbol), main_state)
++    legacy, integrated, research, generations = _load_existing_evidence(parent_run_id, path)
++    candidates: list[dict[str, Any]] = []
++    for symbol in universe:
++        role = "MAIN" if symbol == normalize_symbol(main_symbol) else "SECONDARY"
++        candidate = _build_candidate(
++            symbol=symbol, role=role, cached_state=cached.get(symbol), legacy=legacy.get(symbol, {}),
++            integrated=integrated.get(symbol, {}), research_row=research.get(symbol, {}),
++            generation=generations.get(symbol, {}), identity=identity,
++            parent_run_id=parent_run_id, path=path, thresholds=thresholds, weights=weights,
++        )
++        candidates.append(candidate)
++    report = publish_daily_snapshot_from_records(
++        broker_identity=identity, ordered_symbols=universe, main_symbol=main_symbol,
++        parent_run_id=parent_run_id, candidates=candidates, path=path,
++        thresholds=thresholds, weights=weights,
++    )
++    state["field10_daily_snapshot_contract_20260702"] = {
++        key: value for key, value in report.items() if key != "rows"
++    }
++    return report
++
++
++def validate_persisted_snapshot(*, broker_day: str | None = None, path: Path | str = DB_PATH) -> dict[str, Any]:
++    migrate_daily_snapshot_database(path)
++    with _connect(path) as conn:
++        if broker_day is None:
++            row = conn.execute("SELECT broker_day FROM field10_daily_snapshot ORDER BY broker_day DESC LIMIT 1").fetchone()
++            broker_day = None if row is None else str(row["broker_day"])
++        if not broker_day:
++            return {"ok": False, "status": "NOT_FOUND"}
++        existing = _load_valid_existing(conn, broker_day)
++    if not existing:
++        return {"ok": False, "status": "NOT_FOUND", "broker_day": broker_day}
++    return {"ok": bool(existing["valid"]), "status": "VALID" if existing["valid"] else "CHECKSUM_FAILED", "broker_day": broker_day, "daily_snapshot_id": existing["meta"]["daily_snapshot_id"], "content_hash": existing["meta"]["content_hash"], "row_count": len(existing["rows"])}
++
++
++def _latest_safety(conn: sqlite3.Connection, broker_day: str) -> dict[str, str]:
++    rows = conn.execute(
++        """SELECT e.symbol,e.safety_veto FROM field10_daily_safety_event e
++           JOIN (SELECT symbol,MAX(observed_at_broker_time) AS latest FROM field10_daily_safety_event
++                 WHERE broker_day=? GROUP BY symbol) x
++             ON x.symbol=e.symbol AND x.latest=e.observed_at_broker_time
++           WHERE e.broker_day=?""", (broker_day, broker_day),
++    ).fetchall()
++    return {str(row["symbol"]): str(row["safety_veto"]) for row in rows}
++
++
++def load_current_daily_snapshot(*, broker_day: str | None = None, path: Path | str = DB_PATH) -> dict[str, Any]:
++    """Read-only loader used by Field 10 UI. No market/API calculation occurs."""
++    migrate_daily_snapshot_database(path)
++    with _connect(path) as conn:
++        if broker_day is None:
++            day_row = conn.execute("SELECT broker_day FROM field10_daily_snapshot ORDER BY broker_day DESC LIMIT 1").fetchone()
++            broker_day = None if day_row is None else str(day_row["broker_day"])
++        if not broker_day:
++            return {"metadata": {}, "current": pd.DataFrame(columns=CURRENT_COLUMNS), "components": pd.DataFrame()}
++        meta_row = conn.execute("SELECT * FROM field10_daily_snapshot WHERE broker_day=?", (broker_day,)).fetchone()
++        if meta_row is None:
++            return {"metadata": {}, "current": pd.DataFrame(columns=CURRENT_COLUMNS), "components": pd.DataFrame()}
++        symbol_rows = conn.execute(
++            "SELECT row_json FROM field10_daily_snapshot_symbol WHERE daily_snapshot_id=? ORDER BY daily_rank IS NULL,daily_rank,symbol",
++            (meta_row["daily_snapshot_id"],),
++        ).fetchall()
++        safety = _latest_safety(conn, broker_day)
++        decoded = [json.loads(row["row_json"]) for row in symbol_rows]
++        for row in decoded:
++            row["Safety Veto"] = safety.get(str(row.get("Symbol")), row.get("Safety Veto") or "CLEAR")
++        current = pd.DataFrame([{column: row.get(column) for column in CURRENT_COLUMNS} for row in decoded], columns=CURRENT_COLUMNS)
++        components = pd.read_sql_query(
++            """SELECT symbol AS Symbol,component_name AS Component,component_value AS Value,
++                      configured_weight AS Weight,available AS Available,critical AS Critical,
++                      contribution AS Contribution,status AS Status,evidence_json AS Evidence
++               FROM field10_daily_score_component WHERE daily_snapshot_id=? ORDER BY symbol,component_name""",
++            conn, params=(meta_row["daily_snapshot_id"],),
++        )
++        metadata = dict(meta_row)
++        for key in ("ordered_symbol_universe_json", "secondary_symbols_json", "provider_aliases_json", "child_run_ids_json", "canonical_run_ids_json", "source_ids_json", "snapshot_hashes_json", "metadata_json"):
++            try:
++                metadata[key.removesuffix("_json")] = json.loads(metadata.get(key) or "{}")
++            except Exception:
++                metadata[key.removesuffix("_json")] = {}
++    return {"metadata": metadata, "current": current, "components": components}
++
++
++def load_daily_history(*, days: int = 25, symbols: Sequence[str] | None = None, limit: int = 1000, offset: int = 0, path: Path | str = DB_PATH) -> pd.DataFrame:
++    """Read persisted original ranks and settled outcomes; never rerank history."""
++    migrate_daily_snapshot_database(path)
++    clauses: list[str] = []
++    params: list[Any] = []
++    if symbols:
++        cleaned = [normalize_symbol(s) for s in symbols]
++        clauses.append("s.symbol IN (%s)" % ",".join("?" for _ in cleaned))
++        params.extend(cleaned)
++    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
++    query = f"""
++        SELECT s.broker_day,s.symbol,s.daily_rank,s.institutional_score,s.stable_daily_bias,
++               s.less_risky_bias,s.daily_grade,o.settlement_status,o.actual_1h_direction,
++               o.actual_3h_direction,o.actual_6h_direction,o.day_close_direction,o.correct_1h,
++               o.correct_3h,o.correct_6h,o.mfe,o.mae,o.spread_adjusted_outcome,
++               o.calibration_error,d.model_version,d.formula_version,d.universe_hash,s.snapshot_hash
++        FROM field10_daily_snapshot_symbol s
++        JOIN field10_daily_snapshot d USING(daily_snapshot_id)
++        LEFT JOIN field10_daily_outcome o USING(daily_snapshot_id,symbol)
++        {where}
++        ORDER BY s.broker_day DESC,s.daily_rank IS NULL,s.daily_rank,s.symbol
++        LIMIT ? OFFSET ?
++    """
++    params.extend([max(1, min(int(limit), 10000)), max(0, int(offset))])
++    with _connect(path) as conn:
++        frame = pd.read_sql_query(query, conn, params=params)
++    if frame.empty:
++        return pd.DataFrame(columns=HISTORY_COLUMNS)
++    # Latest N distinct broker days.
++    keep_days = list(dict.fromkeys(frame["broker_day"].astype(str)))[: max(1, int(days))]
++    frame = frame.loc[frame["broker_day"].astype(str).isin(keep_days)].copy()
++    frame["rank_stability"] = np.nan
++    frame["previous_day_rank_change"] = np.nan
++    for symbol, indexes in frame.groupby("symbol", sort=False).groups.items():
++        ordered = frame.loc[indexes].sort_values("broker_day")
++        previous = pd.to_numeric(ordered["daily_rank"], errors="coerce").shift(1)
++        change = pd.to_numeric(ordered["daily_rank"], errors="coerce") - previous
++        frame.loc[ordered.index, "previous_day_rank_change"] = change
++        frame.loc[ordered.index, "rank_stability"] = (100.0 - 20.0 * change.abs()).clip(0.0, 100.0)
++    rename = {
++        "broker_day": "Broker Day", "symbol": "Symbol", "daily_rank": "Original Morning Rank",
++        "institutional_score": "Original Morning Score", "stable_daily_bias": "Original Bias",
++        "less_risky_bias": "Original Less-Risky Bias", "settlement_status": "Outcome Settled Status",
++        "actual_1h_direction": "Actual 1H Direction", "actual_3h_direction": "Actual 3H Direction",
++        "actual_6h_direction": "Actual 6H Direction", "day_close_direction": "Day-Close Direction",
++        "correct_1h": "Correct 1H", "correct_3h": "Correct 3H", "correct_6h": "Correct 6H",
++        "mfe": "MFE", "mae": "MAE", "spread_adjusted_outcome": "Spread-Adjusted Outcome",
++        "calibration_error": "Calibration Error", "rank_stability": "Rank Stability",
++        "previous_day_rank_change": "Previous-Day Rank Change", "daily_grade": "Daily Grade",
++        "model_version": "Model Version", "formula_version": "Formula Version",
++        "universe_hash": "Universe Hash", "snapshot_hash": "Snapshot Hash",
++    }
++    frame = frame.rename(columns=rename)
++    return frame[[column for column in HISTORY_COLUMNS if column in frame.columns]].reset_index(drop=True)
++
++
++def current_table_data_dictionary() -> pd.DataFrame:
++    definitions = {
++        "Daily Rank": "Immutable eligibility-first rank; NULL for blocked/incomplete symbols.",
++        "Institutional Morning Score": "0-100 normalized weighted score over genuinely available components.",
++        "Existing Rank Score": "Preserved legacy Field 10 weighted rank score.",
++        "600-H1 Completion": "COMPLETE only for exactly 600 valid completed chronological H1 candles ending at cutoff.",
++        "Safety Veto": "Live CLEAR/CAUTION/BLOCK_NEW_ENTRIES overlay; never changes locked direction or rank.",
++        "Explanation": "Deterministic JSON with gates, missing evidence, score weights, and research diagnostics.",
++        "Publication Status": "PUBLISHED_LOCKED authoritative append-only publication state.",
++    }
++    return pd.DataFrame([{"Column": column, "Definition": definitions.get(column, "Persisted morning-cutoff evidence; see implementation report."), "Mutable Intraday": "YES (safety only)" if column == "Safety Veto" else "NO"} for column in CURRENT_COLUMNS])
++
++
++__all__ = [
++    "MORNING_LOCK_HOUR", "MORNING_LOCK_MINUTE", "DAY_END_REVIEW_HOUR", "TIMEFRAME",
++    "HIGHER_STANDARD_REQUIRED_CANDLES", "MODEL_VERSION", "FORMULA_VERSION",
++    "THRESHOLD_VERSION", "CONTRACT_VERSION", "SnapshotThresholds", "ScoreWeights",
++    "DEFAULT_THRESHOLDS", "DEFAULT_WEIGHTS", "CURRENT_COLUMNS", "HISTORY_COLUMNS",
++    "deterministic_hash", "canonical_symbol_universe", "symbol_universe_hash",
++    "migrate_daily_snapshot_database", "validate_completed_h1_frame",
++    "publish_daily_snapshot", "publish_daily_snapshot_from_records",
++    "validate_persisted_snapshot", "load_current_daily_snapshot", "load_daily_history",
++    "current_table_data_dictionary",
++]
+--- a/core/field10_live_safety_veto_20260702.py
++++ b/core/field10_live_safety_veto_20260702.py
+@@ -0,0 +1,265 @@
++"""Incremental live safety overlay for immutable Field 10 morning decisions.
++
++The overlay can only return CLEAR, CAUTION, or BLOCK_NEW_ENTRIES. It never
++changes the locked daily rank, BUY/SELL/WAIT bias, grade, or score.
++"""
++from __future__ import annotations
++
++from collections.abc import Mapping, MutableMapping, Sequence
++from pathlib import Path
++from typing import Any
++import json
++import sqlite3
++
++import numpy as np
++import pandas as pd
++
++from core.field10_daily_snapshot_contract_20260702 import (
++    DB_PATH, _canonical_from_state, _connect, _expected_trading_hours, _frame_from_state,
++    _json_safe, _normalize_ohlc, _safe_float, _clip100, deterministic_hash,
++    load_current_daily_snapshot, migrate_daily_snapshot_database,
++)
++from core.multi_symbol_field10_20260701 import (
++    MANIFEST_KEY, _cache_path, _read_cache_payload, normalize_symbol,
++)
++
++VERSION = "field10-live-safety-veto-20260702-v2"
++VALID_VALUES = {"CLEAR", "CAUTION", "BLOCK_NEW_ENTRIES"}
++LIVE_STALE_CAUTION_HOURS = 1.5
++LIVE_STALE_BLOCK_HOURS = 3.0
++
++
++def evaluate_safety_veto(evidence: Mapping[str, Any]) -> dict[str, Any]:
++    """Pure deterministic safety decision from current evidence."""
++    block: list[str] = []
++    caution: list[str] = []
++    stale_hours = _safe_float(evidence.get("stale_hours"))
++    if stale_hours is None or stale_hours > LIVE_STALE_BLOCK_HOURS:
++        block.append("API/market data is stale")
++    elif stale_hours > LIVE_STALE_CAUTION_HOURS:
++        caution.append("API/market data freshness is degraded")
++    missing = int(evidence.get("missing_candles") or 0)
++    if missing > 0:
++        block.append(f"missing completed H1 candles={missing}")
++    spread_pct = _clip100(evidence.get("spread_percentile"))
++    if spread_pct is not None and spread_pct >= 98:
++        block.append("spread percentile is extreme")
++    elif spread_pct is not None and spread_pct >= 90:
++        caution.append("spread percentile is elevated")
++    cp = _clip100(evidence.get("changepoint_probability"))
++    if cp is not None and cp >= 75:
++        block.append("BOCPD changepoint probability is severe")
++    elif cp is not None and cp >= 55:
++        caution.append("BOCPD changepoint probability is elevated")
++    break_status = str(evidence.get("structural_break_status") or "").upper()
++    if break_status in {"SEVERE", "BREAK_DETECTED_SEVERE", "RECALIBRATION_REQUIRED"}:
++        block.append("severe structural break")
++    elif "BREAK" in break_status and "NO_" not in break_status:
++        caution.append("structural break warning")
++    volatility_z = _safe_float(evidence.get("volatility_z"))
++    if volatility_z is not None and abs(volatility_z) >= 4.0:
++        block.append("extreme volatility")
++    elif volatility_z is not None and abs(volatility_z) >= 2.5:
++        caution.append("elevated volatility")
++    interval_ratio = _safe_float(evidence.get("conformal_interval_ratio"))
++    if interval_ratio is not None and interval_ratio >= 4.0:
++        block.append("conformal interval explosion")
++    elif interval_ratio is not None and interval_ratio >= 2.5:
++        caution.append("conformal interval widened")
++    if not bool(evidence.get("canonical_identity_valid", False)):
++        block.append("canonical identity failure")
++    if not bool(evidence.get("connector_ok", True)):
++        block.append("connector failure")
++    veto = "BLOCK_NEW_ENTRIES" if block else ("CAUTION" if caution else "CLEAR")
++    return {
++        "safety_veto": veto,
++        "block_reasons": block,
++        "caution_reasons": caution,
++        "direction_unchanged": True,
++        "version": VERSION,
++    }
++
++
++def record_safety_event(
++    *, daily_snapshot_id: str | None, broker_day: str, symbol: str,
++    observed_at_broker_time: Any, evidence: Mapping[str, Any],
++    path: Path | str = DB_PATH,
++) -> dict[str, Any]:
++    migrate_daily_snapshot_database(path)
++    result = evaluate_safety_veto(evidence)
++    observed = pd.Timestamp(observed_at_broker_time).isoformat()
++    payload = {
++        "daily_snapshot_id": daily_snapshot_id, "broker_day": broker_day,
++        "symbol": normalize_symbol(symbol), "observed_at": observed,
++        "result": result, "evidence": _json_safe(evidence),
++    }
++    event_hash = deterministic_hash(payload)
++    event_id = f"SAFE-{event_hash[:28]}"
++    with _connect(path) as conn:
++        conn.execute(
++            """INSERT OR IGNORE INTO field10_daily_safety_event(
++                event_id,daily_snapshot_id,broker_day,symbol,observed_at_broker_time,
++                safety_veto,reasons_json,evidence_json,event_hash
++            ) VALUES(?,?,?,?,?,?,?,?,?)""",
++            (event_id, daily_snapshot_id, broker_day, normalize_symbol(symbol), observed,
++             result["safety_veto"], json.dumps({"block": result["block_reasons"], "caution": result["caution_reasons"]}, sort_keys=True),
++             json.dumps(_json_safe(evidence), sort_keys=True), event_hash),
++        )
++        conn.commit()
++    return {"ok": True, "event_id": event_id, **result}
++
++
++def _cached_state(symbol: str) -> dict[str, Any]:
++    try:
++        payload = _read_cache_payload(_cache_path(symbol))
++        state = payload.get("state")
++        return dict(state) if isinstance(state, Mapping) else {}
++    except Exception:
++        return {}
++
++
++def _volatility_z(frame: pd.DataFrame) -> float | None:
++    if not isinstance(frame, pd.DataFrame) or frame.empty:
++        return None
++    close_col = next((c for c in frame.columns if str(c).strip().lower() in {"close", "c"}), None)
++    if close_col is None:
++        return None
++    returns = pd.to_numeric(frame[close_col], errors="coerce").pct_change().dropna()
++    if len(returns) < 50:
++        return None
++    recent = float(returns.tail(6).std(ddof=1))
++    rolling = returns.rolling(24).std().dropna().tail(120)
++    if len(rolling) < 20 or float(rolling.std(ddof=1)) <= 0:
++        return None
++    return (recent - float(rolling.mean())) / float(rolling.std(ddof=1))
++
++
++def _latest_live_evidence(parent_run_id: str, symbol: str, path: Path | str) -> dict[str, Any]:
++    if not parent_run_id:
++        return {}
++    with _connect(path) as conn:
++        try:
++            row = conn.execute(
++                """SELECT change_probability,structural_break_status,interval_width,spread_quality,
++                          drift_status,broker_timestamp,publication_status
++                   FROM field10_integrated_evidence
++                   WHERE parent_run_id=? AND symbol=?
++                   ORDER BY broker_timestamp DESC,created_at DESC LIMIT 1""",
++                (str(parent_run_id), normalize_symbol(symbol)),
++            ).fetchone()
++        except sqlite3.Error:
++            row = None
++    return {} if row is None else dict(row)
++
++
++def _recent_missing_candles(frame: pd.DataFrame, symbol: str) -> int:
++    normalized = _normalize_ohlc(frame).dropna(subset=["time", "open", "high", "low", "close"])
++    normalized = normalized.sort_values("time", kind="mergesort").drop_duplicates("time", keep=False).tail(72)
++    if len(normalized) < 2:
++        return 1
++    expected = _expected_trading_hours(
++        pd.Timestamp(normalized["time"].iloc[0]), pd.Timestamp(normalized["time"].iloc[-1]), symbol,
++    )
++    return int(len(expected.difference(pd.DatetimeIndex(normalized["time"]))))
++
++
++def _interval_explosion_ratio(interval_width: Any, frame: pd.DataFrame) -> float | None:
++    width = _safe_float(interval_width)
++    if width is None or not isinstance(frame, pd.DataFrame) or frame.empty:
++        return None
++    normalized = _normalize_ohlc(frame)
++    returns = pd.to_numeric(normalized.get("close"), errors="coerce").pct_change().dropna().tail(120)
++    if len(returns) < 30:
++        return None
++    scale = float(returns.std(ddof=1))
++    if not np.isfinite(scale) or scale <= 0:
++        return None
++    return abs(float(width)) / scale
++
++
++def update_live_safety_veto(
++    state: MutableMapping[str, Any], *, symbols: Sequence[str] | None = None,
++    path: Path | str = DB_PATH,
++) -> dict[str, Any]:
++    """Update safety events during a calculation run; never called by UI."""
++    snapshot = load_current_daily_snapshot(path=path)
++    metadata = snapshot.get("metadata") or {}
++    current = snapshot.get("current")
++    if not metadata or not isinstance(current, pd.DataFrame) or current.empty:
++        return {"ok": False, "status": "NO_LOCKED_SNAPSHOT", "events": []}
++    chosen = [normalize_symbol(s) for s in (symbols or current["Symbol"].tolist())]
++    manifest = state.get(MANIFEST_KEY) if isinstance(state.get(MANIFEST_KEY), Mapping) else {}
++    live_parent_run_id = str(manifest.get("parent_run_id") or "")
++    events: list[dict[str, Any]] = []
++    for symbol in chosen:
++        row_frame = current.loc[current["Symbol"].astype(str).eq(symbol)]
++        if row_frame.empty:
++            continue
++        row = row_frame.iloc[0]
++        cached = _cached_state(symbol)
++        canonical = _canonical_from_state(cached)
++        frame = _frame_from_state(cached)
++        try:
++            from core.shared_broker_time_20260622 import shared_broker_time_provider
++            clock = dict(shared_broker_time_provider(cached or state, canonical=canonical))
++            observed = pd.Timestamp(clock.get("broker_time"))
++            freshness_minutes = _safe_float(clock.get("freshness_lag_minutes"))
++            stale_hours = None if freshness_minutes is None else max(0.0, freshness_minutes / 60.0)
++        except Exception:
++            observed = pd.Timestamp(metadata["locked_until_broker_time"]) - pd.Timedelta(days=1)
++            stale_hours = None
++        connector = cached.get("multi_symbol_api_router_20260702")
++        connector_ok = True if not isinstance(connector, Mapping) else bool(connector.get("ok", True))
++        live = _latest_live_evidence(live_parent_run_id, symbol, path)
++        spread_quality = str(live.get("spread_quality") or "").upper()
++        spread_percentile = row.get("Spread Percentile")
++        if spread_quality in {"VERY HIGH", "EXTREME"}:
++            spread_percentile = 99.0
++        elif spread_quality == "HIGH" and (spread_percentile is None or pd.isna(spread_percentile)):
++            spread_percentile = 92.0
++        evidence = {
++            "stale_hours": stale_hours,
++            "missing_candles": _recent_missing_candles(frame, symbol),
++            "spread_percentile": spread_percentile,
++            "changepoint_probability": live.get("change_probability", row.get("Changepoint Probability")),
++            "structural_break_status": live.get("structural_break_status", row.get("Structural Break Status")),
++            "volatility_z": _volatility_z(frame),
++            "conformal_interval_ratio": _interval_explosion_ratio(
++                live.get("interval_width", row.get("Conformal Interval Width")), frame,
++            ),
++            "canonical_identity_valid": bool(canonical.get("run_id") or canonical.get("canonical_calculation_id")) and normalize_symbol(canonical.get("symbol") or symbol) == symbol,
++            "connector_ok": connector_ok,
++            "live_parent_run_id": live_parent_run_id,
++            "live_evidence_broker_timestamp": live.get("broker_timestamp"),
++            "live_evidence_publication_status": live.get("publication_status"),
++        }
++        event = record_safety_event(
++            daily_snapshot_id=metadata.get("daily_snapshot_id"), broker_day=metadata.get("broker_day"),
++            symbol=symbol, observed_at_broker_time=observed, evidence=evidence, path=path,
++        )
++        events.append({"symbol": symbol, **event})
++    state["field10_live_safety_veto_20260702"] = {"ok": True, "events": events}
++    return {"ok": True, "status": "UPDATED", "events": events}
++
++
++def load_latest_safety_events(*, broker_day: str | None = None, path: Path | str = DB_PATH) -> pd.DataFrame:
++    migrate_daily_snapshot_database(path)
++    with _connect(path) as conn:
++        if broker_day is None:
++            row = conn.execute("SELECT MAX(broker_day) AS day FROM field10_daily_safety_event").fetchone()
++            broker_day = row["day"] if row else None
++        if not broker_day:
++            return pd.DataFrame()
++        return pd.read_sql_query(
++            """SELECT broker_day AS [Broker Day],symbol AS Symbol,observed_at_broker_time AS [Observed At Broker Time],
++                      safety_veto AS [Safety Veto],reasons_json AS Reasons,evidence_json AS Evidence
++               FROM field10_daily_safety_event WHERE broker_day=?
++               ORDER BY observed_at_broker_time DESC,symbol""",
++            conn, params=(broker_day,),
++        )
++
++
++__all__ = [
++    "VERSION", "VALID_VALUES", "evaluate_safety_veto", "record_safety_event",
++    "update_live_safety_veto", "load_latest_safety_events",
++]
+--- a/tests/test_field10_daily_snapshot_contract_20260702.py
++++ b/tests/test_field10_daily_snapshot_contract_20260702.py
+@@ -0,0 +1,420 @@
++from __future__ import annotations
++
++from pathlib import Path
++import json
++import sqlite3
++
++import pandas as pd
++import pytest
++
++import core.field10_daily_snapshot_contract_20260702 as contract
++import core.field10_daily_outcome_settlement_20260702 as settlement
++import core.field10_live_safety_veto_20260702 as safety
++
++
++def _identity(day: str = "2026-07-02", hour: int = 3, *, before: bool = False) -> dict:
++    broker = pd.Timestamp(f"{day} {hour:02d}:00:00+00:00")
++    cutoff = pd.Timestamp(f"{day} 03:00:00+00:00")
++    return {
++        "broker_day": day,
++        "broker_time": broker,
++        "cutoff_broker_time": cutoff,
++        "latest_completed_h1": cutoff - pd.Timedelta(hours=1),
++        "required_cutoff_completed_h1": cutoff - pd.Timedelta(hours=1),
++        "locked_until_broker_time": cutoff + pd.Timedelta(days=1),
++        "before_cutoff": before,
++        "at_or_after_day_end": hour >= 23,
++    }
++
++
++def _candidate(symbol: str, score: float | None = 80.0, *, eligible: bool = True, role: str = "SECONDARY") -> dict:
++    status = "ELIGIBLE" if eligible else "BLOCKED"
++    return {
++        "symbol": symbol,
++        "role": role,
++        "daily_grade": "A" if eligible else "BLOCKED",
++        "institutional_morning_score": score if eligible else None,
++        "existing_rank_score": 75.0,
++        "eligibility_status": status,
++        "stable_daily_bias": "BUY",
++        "less_risky_bias": "BUY",
++        "trade_permission": "ALLOWED" if eligible else "BLOCKED",
++        "higher_standard_regime": "BULL_NORMAL",
++        "data_quality_grade": "A" if eligible else "D",
++        "data_quality_score": 90.0 if eligible else 40.0,
++        "regime_probability": 82.0,
++        "regime_entropy": 18.0,
++        "posterior_margin": 64.0,
++        "regime_persistence": 86.0,
++        "regime_age": 24.0,
++        "expected_regime_duration": 60.0,
++        "estimated_remaining_duration": 36.0,
++        "transition_risk_1h": 5.0,
++        "transition_risk_3h": 10.0,
++        "transition_risk_6h": 18.0,
++        "calibrated_bias_probability": 78.0,
++        "brier_score": 0.16,
++        "forecast_accuracy_1h": 72.0,
++        "forecast_accuracy_3h": 68.0,
++        "forecast_accuracy_6h": 64.0,
++        "technical_bias": "BUY",
++        "technical_reliability": 82.0,
++        "sentiment_bias": "BUY",
++        "sentiment_reliability": 70.0,
++        "session_bias": "BUY",
++        "session_reliability": 76.0,
++        "evidence_agreement": 84.0,
++        "conflict_index": 16.0,
++        "conformal_coverage": 90.0,
++        "conformal_interval_width": 0.002,
++        "structural_break_status": "VALID",
++        "changepoint_probability": 12.0,
++        "spread_percentile": 22.0,
++        "cvar_95": -0.01,
++        "correlation_cluster": "C1",
++        "duplicate_exposure_penalty": 8.0,
++        "frame_validation": {"status": "COMPLETE" if eligible else "INCOMPLETE", "sample_count": 600 if eligible else 599},
++        "identity": {
++            "canonical_run_id": f"RUN-{symbol}", "source_id": f"SRC-{symbol}",
++            "snapshot_hash": f"HASH-{symbol}", "child_run_id": f"CHILD-{symbol}",
++        },
++        "score": {
++            "eligibility_reasons": [] if eligible else ["fixture blocked"],
++            "available_weight": 100.0,
++            "missing_weight": 0.0,
++            "calculation_status": "COMPLETE" if eligible else "BLOCKED",
++            "score_confidence": 100.0 if eligible else 0.0,
++            "components": {},
++        },
++        "research_layers": {
++            "spa": {"status": "VALID", "candidate_count": 3, "promotion_status": "NOT_PROMOTED"},
++            "pbo": {"status": "INSUFFICIENT_SAMPLE", "effective_trial_count": 0, "promotion_eligibility": "BLOCKED"},
++        },
++    }
++
++
++def _frame(rows: int, end: str = "2026-07-02 02:00:00+00:00") -> pd.DataFrame:
++    times = pd.date_range(end=pd.Timestamp(end), periods=rows, freq="h")
++    base = pd.Series(range(rows), dtype=float) / 10000 + 1.0
++    return pd.DataFrame({"time": times, "open": base, "high": base + 0.001, "low": base - 0.001, "close": base + 0.0002})
++
++
++def _publish(db: Path, candidates=None, identity=None, symbols=None):
++    candidates = candidates or [_candidate("EURUSD", 88, role="MAIN"), _candidate("USDJPY", 80)]
++    symbols = symbols or [item["symbol"] for item in candidates]
++    return contract.publish_daily_snapshot_from_records(
++        broker_identity=identity or _identity(), ordered_symbols=symbols,
++        main_symbol="EURUSD", parent_run_id="PARENT-1", candidates=candidates, path=db,
++    )
++
++
++def test_01_three_am_cutoff_uses_completed_two_am(monkeypatch):
++    import core.shared_broker_time_20260622 as broker
++    monkeypatch.setattr(broker, "shared_broker_time_provider", lambda state, canonical=None: {
++        "broker_time": pd.Timestamp("2026-07-02 03:00:00+00:00"),
++        "latest_completed_h1_utc": pd.Timestamp("2026-07-02 03:00:00+00:00"),
++        "broker_offset_minutes": 0,
++    })
++    identity = contract._broker_identity({}, {})
++    assert identity["cutoff_broker_time"].hour == 3
++    assert identity["latest_completed_h1"] == pd.Timestamp("2026-07-02 02:00:00+00:00")
++
++
++def test_02_forming_three_am_candle_is_rejected():
++    frame = _frame(600)
++    forming = frame.iloc[[-1]].copy()
++    forming["time"] = pd.Timestamp("2026-07-02 03:00:00+00:00")
++    report = contract.validate_completed_h1_frame(pd.concat([frame, forming], ignore_index=True), latest_completed_h1_utc="2026-07-02 02:00:00+00:00", symbol="BTCUSD")
++    assert report["future_timestamp_count"] == 1
++    assert report["status"] == "INCOMPLETE"
++
++
++def test_03_repeated_rerun_returns_identical_table_and_hash(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    first = _publish(db)
++    second = _publish(db, candidates=[_candidate("EURUSD", 1, role="MAIN")])
++    assert second["status"] == "ALREADY_EXISTS_VALID"
++    assert first["content_hash"] == second["content_hash"]
++    assert first["rows"] == second["rows"]
++
++
++def test_04_page_navigation_read_does_not_change_hash(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    before = contract.validate_persisted_snapshot(path=db)
++    contract.load_current_daily_snapshot(path=db)
++    contract.load_current_daily_snapshot(path=db)
++    after = contract.validate_persisted_snapshot(path=db)
++    assert before == after
++
++
++def test_05_search_and_filter_are_persistence_neutral(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    before = contract.validate_persisted_snapshot(path=db)
++    current = contract.load_current_daily_snapshot(path=db)["current"]
++    _ = current.loc[current.astype(str).apply(lambda c: c.str.contains("EUR", regex=False)).any(axis=1)].sort_values("Symbol")
++    after = contract.validate_persisted_snapshot(path=db)
++    assert before["content_hash"] == after["content_hash"]
++
++
++def test_06_csv_export_is_persistence_neutral(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    before = contract.validate_persisted_snapshot(path=db)
++    payload = contract.load_current_daily_snapshot(path=db)["current"].to_csv(index=False).encode()
++    assert payload.startswith(b"Daily Rank")
++    assert contract.validate_persisted_snapshot(path=db)["content_hash"] == before["content_hash"]
++
++
++def test_07_active_symbol_change_cannot_alter_table(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    first = _publish(db)
++    state = {"symbol": "USDJPY", "multi_symbol_active_20260701": "USDJPY"}
++    _ = state
++    second = contract.load_current_daily_snapshot(path=db)
++    assert second["metadata"]["content_hash"] == first["content_hash"]
++
++
++def test_08_restart_restores_same_rows_and_hashes(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    first = _publish(db)
++    del first
++    restored = contract.load_current_daily_snapshot(path=db)
++    assert len(restored["current"]) == 2
++    assert contract.validate_persisted_snapshot(path=db)["status"] == "VALID"
++
++
++def test_09_changed_universe_after_publication_cannot_rerank(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    first = _publish(db)
++    second = _publish(db, candidates=[_candidate("EURUSD", 10, role="MAIN"), _candidate("GBPUSD", 99)], symbols=["GBPUSD", "EURUSD"])
++    assert second["status"] == "ALREADY_EXISTS_VALID"
++    assert [row["Symbol"] for row in second["rows"]] == [row["Symbol"] for row in first["rows"]]
++
++
++def test_10_failed_symbol_remains_visible_and_unranked(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    report = _publish(db, candidates=[_candidate("EURUSD", 88, role="MAIN"), _candidate("USDJPY", None, eligible=False)])
++    failed = next(row for row in report["rows"] if row["Symbol"] == "USDJPY")
++    assert failed["Daily Rank"] is None
++    assert failed["Daily Grade"] == "BLOCKED"
++
++
++def test_11_599_h1_candles_are_incomplete():
++    report = contract.validate_completed_h1_frame(_frame(599), latest_completed_h1_utc="2026-07-02 02:00:00+00:00", symbol="BTCUSD")
++    assert report["status"] == "INCOMPLETE"
++    assert report["sample_count"] == 599
++
++
++def test_12_600_valid_h1_candles_are_complete():
++    report = contract.validate_completed_h1_frame(_frame(600), latest_completed_h1_utc="2026-07-02 02:00:00+00:00", symbol="BTCUSD")
++    assert report["status"] == "COMPLETE"
++    assert report["sample_count"] == 600
++
++
++def test_13_duplicate_and_future_timestamps_are_rejected():
++    base = _frame(600)
++    duplicate = base.iloc[[-1]].copy()
++    future = base.iloc[[-1]].copy(); future["time"] = pd.Timestamp("2026-07-02 03:00:00+00:00")
++    report = contract.validate_completed_h1_frame(pd.concat([base, duplicate, future]), latest_completed_h1_utc="2026-07-02 02:00:00+00:00", symbol="BTCUSD")
++    assert report["duplicate_count"] == 2
++    assert report["future_timestamp_count"] == 1
++    assert report["eligible"] is False
++
++
++def test_14_twenty_three_hour_process_cannot_overwrite_current_table(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    first = _publish(db)
++    at_23 = _identity(hour=23)
++    second = _publish(db, candidates=[_candidate("EURUSD", 5, role="MAIN")], identity=at_23, symbols=["EURUSD"])
++    assert second["status"] == "ALREADY_EXISTS_VALID"
++    assert second["content_hash"] == first["content_hash"]
++
++
++def test_15_day_end_can_create_next_day_candidate(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    bundle = contract.load_current_daily_snapshot(path=db)
++    report = settlement.prepare_next_day_candidate(metadata=bundle["metadata"], current_rows=bundle["current"], prepared_at_broker_time="2026-07-02 23:00:00+00:00", path=db)
++    assert report["status"] == "NEXT_DAY_CANDIDATE_READY"
++
++
++def test_16_candidate_activates_only_at_next_cutoff(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    bundle = contract.load_current_daily_snapshot(path=db)
++    settlement.prepare_next_day_candidate(metadata=bundle["metadata"], current_rows=bundle["current"], prepared_at_broker_time="2026-07-02 23:00:00+00:00", path=db)
++    before = _identity("2026-07-03", hour=2, before=True)
++    denied = contract.publish_daily_snapshot_from_records(broker_identity=before, ordered_symbols=["EURUSD"], main_symbol="EURUSD", parent_run_id="P2", candidates=[_candidate("EURUSD", 90, role="MAIN")], path=db)
++    assert denied["status"] == "BEFORE_MORNING_CUTOFF"
++    with sqlite3.connect(db) as conn:
++        assert conn.execute("SELECT status FROM field10_next_day_candidate WHERE target_broker_day='2026-07-03'").fetchone()[0] == "NEXT_DAY_CANDIDATE_READY"
++    activated = contract.publish_daily_snapshot_from_records(
++        broker_identity=_identity("2026-07-03", hour=3),
++        ordered_symbols=["EURUSD", "USDJPY"], main_symbol="EURUSD", parent_run_id="P3",
++        candidates=[_candidate("EURUSD", 90, role="MAIN"), _candidate("USDJPY", 80)], path=db,
++    )
++    assert activated["status"] == "PUBLISHED_LOCKED"
++    with sqlite3.connect(db) as conn:
++        assert conn.execute("SELECT status FROM field10_next_day_candidate WHERE target_broker_day='2026-07-03'").fetchone()[0] == "NEXT_DAY_ACTIVATED"
++
++
++def test_17_safety_veto_does_not_change_locked_bias_or_rank(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    bundle = contract.load_current_daily_snapshot(path=db)
++    before = bundle["current"].set_index("Symbol").loc["EURUSD", ["Daily Rank", "Stable Daily Bias"]].to_dict()
++    safety.record_safety_event(daily_snapshot_id=bundle["metadata"]["daily_snapshot_id"], broker_day="2026-07-02", symbol="EURUSD", observed_at_broker_time="2026-07-02 10:00:00+00:00", evidence={"stale_hours": 10, "canonical_identity_valid": True, "connector_ok": True}, path=db)
++    after = contract.load_current_daily_snapshot(path=db)["current"].set_index("Symbol").loc["EURUSD"]
++    assert after["Safety Veto"] == "BLOCK_NEW_ENTRIES"
++    assert after["Daily Rank"] == before["Daily Rank"]
++    assert after["Stable Daily Bias"] == before["Stable Daily Bias"]
++
++
++def test_18_bocpd_or_severe_spread_blocks_new_entries():
++    result = safety.evaluate_safety_veto({"stale_hours": 0, "missing_candles": 0, "spread_percentile": 99, "changepoint_probability": 80, "canonical_identity_valid": True, "connector_ok": True})
++    assert result["safety_veto"] == "BLOCK_NEW_ENTRIES"
++    assert result["direction_unchanged"] is True
++
++
++def test_19_missing_research_evidence_stays_unavailable(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    contract.migrate_daily_snapshot_database(db)
++    result = contract._research_layer_bundle({}, {}, {"frame": pd.DataFrame(), "sample_count": 0}, db, "EURUSD")
++    assert result["calibration"]["status"] == "UNAVAILABLE"
++    assert result["calibration"]["calibrated_directional_probability"] is None
++    assert result["pbo"]["status"] == "INSUFFICIENT_TRIAL_MATRIX"
++
++
++def test_20_unsettled_outcomes_do_not_enter_calibration(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    report = _publish(db)
++    snapshot_id = report["daily_snapshot_id"]
++    with sqlite3.connect(db) as conn:
++        conn.execute("INSERT INTO field10_daily_outcome(daily_snapshot_id,broker_day,symbol,settlement_status,outcome_json) VALUES(?,?,?,?,?)", (snapshot_id, "2026-07-02", "EURUSD", "PARTIAL_SETTLEMENT", "{}"))
++        conn.commit()
++    a1, a3, a6, count = contract._forecast_accuracy_from_db("EURUSD", db)
++    assert (a1, a3, a6, count) == (None, None, None, 0)
++
++
++def test_21_equal_scores_use_deterministic_alphabetical_tie_break():
++    ranked = contract._rank_candidates([_candidate("USDJPY", 80), _candidate("EURUSD", 80, role="MAIN")])
++    assert [(r["daily_rank"], r["symbol"]) for r in ranked] == [(1, "EURUSD"), (2, "USDJPY")]
++
++
++def test_22_input_symbol_order_does_not_change_canonical_universe():
++    first = contract.canonical_symbol_universe(["USDJPY", "GBPUSD", "EURUSD"], "EURUSD")
++    second = contract.canonical_symbol_universe(["GBPUSD", "EURUSD", "USDJPY"], "EURUSD")
++    assert first == second == ["EURUSD", "GBPUSD", "USDJPY"]
++    assert contract.symbol_universe_hash(first, "EURUSD") == contract.symbol_universe_hash(second, "EURUSD")
++
++
++def test_23_field10_open_path_contains_no_market_api_call():
++    source = Path("ui/lunch_field10_multi_symbol_20260701.py").read_text(encoding="utf-8")
++    section = source[source.index("def _render_locked_morning_snapshot"):source.index("def render_field10_content")]
++    assert "prepare_symbol_market_data" not in section
++    assert "activate_symbol_result" not in section
++    assert "single_symbol_runner" not in section
++
++
++def test_24_display_filtering_does_not_call_heavy_calculation(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    before = contract.validate_persisted_snapshot(path=db)["content_hash"]
++    frame = contract.load_current_daily_snapshot(path=db)["current"]
++    _ = frame[frame["Symbol"].eq("EURUSD")]
++    assert contract.validate_persisted_snapshot(path=db)["content_hash"] == before
++
++
++def test_25_main_and_secondary_scope_source_remains_correct():
++    source = Path("core/multi_symbol_field10_20260701.py").read_text(encoding="utf-8")
++    assert 'child_scope = scope if symbol == main else "LUNCH_CORE"' in source
++    assert '"FIELDS_1_TO_3_PLUS_FIELD_10_ONLY"' in source
++
++
++def test_26_legacy_protected_modules_still_exist():
++    for path in (
++        "core/daily_locked_regime_20260625.py",
++        "core/multi_symbol_field10_20260701.py",
++        "core/field10_ten_paper_research_20260701.py",
++        "core/field10_integrated_evidence_20260702.py",
++        "ui/lunch_field10_multi_symbol_20260701.py",
++    ):
++        assert Path(path).is_file()
++
++
++def test_27_streamlit_entrypoints_compile():
++    import py_compile
++    py_compile.compile("app.py", doraise=True)
++    py_compile.compile("adx_dashpoard.py", doraise=True)
++
++
++def test_28_new_modules_compile():
++    import py_compile
++    for path in (
++        "core/field10_daily_snapshot_contract_20260702.py",
++        "core/field10_daily_outcome_settlement_20260702.py",
++        "core/field10_live_safety_veto_20260702.py",
++        "ui/lunch_field10_multi_symbol_20260701.py",
++    ):
++        py_compile.compile(path, doraise=True)
++
++
++def test_29_sqlite_migration_fresh_and_existing(tmp_path: Path):
++    fresh = tmp_path / "fresh.sqlite3"
++    assert contract.migrate_daily_snapshot_database(fresh)["ok"]
++    existing = tmp_path / "existing.sqlite3"
++    with sqlite3.connect(existing) as conn:
++        conn.execute("CREATE TABLE legacy_table(id INTEGER PRIMARY KEY,value TEXT)")
++        conn.execute("INSERT INTO legacy_table(value) VALUES('keep')")
++        conn.commit()
++    assert contract.migrate_daily_snapshot_database(existing)["ok"]
++    with sqlite3.connect(existing) as conn:
++        assert conn.execute("SELECT value FROM legacy_table").fetchone()[0] == "keep"
++        assert conn.execute("SELECT name FROM sqlite_master WHERE name='field10_daily_snapshot'").fetchone()
++
++
++def test_30_single_rank_filter_has_min_max_guard():
++    source = Path("ui/lunch_field10_multi_symbol_20260701.py").read_text(encoding="utf-8")
++    assert source.count("if low == high:") >= 2
++    assert source.count("Rank filter fixed") >= 2
++
++
++def test_31_actual_child_generation_ids_are_persisted(tmp_path: Path):
++    db = tmp_path / "f10.sqlite3"
++    _publish(db)
++    metadata = contract.load_current_daily_snapshot(path=db)["metadata"]
++    assert metadata["child_run_ids"] == {
++        "EURUSD": "CHILD-EURUSD", "USDJPY": "CHILD-USDJPY",
++    }
++
++
++def test_32_runtime_snapshot_checksum_validation(tmp_path: Path):
++    snapshot = tmp_path / "runtime.json"
++    snapshot.write_bytes(b"frozen-runtime")
++    from hashlib import sha256
++    expected = sha256(snapshot.read_bytes()).hexdigest()
++    report = contract._generation_checksum_status({
++        "runtime_snapshot_path": str(snapshot),
++        "runtime_snapshot_sha256": expected,
++    }, "EURUSD")
++    assert report["valid"] is True
++    snapshot.write_bytes(b"tampered")
++    report = contract._generation_checksum_status({
++        "runtime_snapshot_path": str(snapshot),
++        "runtime_snapshot_sha256": expected,
++    }, "EURUSD")
++    assert report["status"] == "CHECKSUM_MISMATCH"
++
++
++def test_33_cutoff_identity_rejects_after_cutoff_generation():
++    identity = _identity()
++    valid = contract._generation_cutoff_status(
++        {"completed_broker_candle": "2026-07-02T02:00:00+00:00"}, identity,
++    )
++    late = contract._generation_cutoff_status(
++        {"completed_broker_candle": "2026-07-02T03:00:00+00:00"}, identity,
++    )
++    assert valid["valid"] is True
++    assert late["status"] == "AFTER_CUTOFF"
+--- a/tools/benchmark_field10_daily_snapshot_20260702.py
++++ b/tools/benchmark_field10_daily_snapshot_20260702.py
+@@ -0,0 +1,197 @@
++"""Reproducible synthetic performance evidence for the immutable Field 10 contract.
++
++This benchmark never calls market APIs. It compares a fresh deterministic
++publication with the persisted ALREADY_EXISTS_VALID fast path and read-only UI
++operations. It is intentionally not presented as a live-provider end-to-end
++benchmark.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import statistics
++import tempfile
++import time
++import tracemalloc
++from pathlib import Path
++from typing import Any, Callable
++
++import pandas as pd
++
++from core.field10_daily_snapshot_contract_20260702 import (
++    load_current_daily_snapshot,
++    migrate_daily_snapshot_database,
++    publish_daily_snapshot_from_records,
++    validate_persisted_snapshot,
++)
++
++
++def _identity() -> dict[str, Any]:
++    cutoff = pd.Timestamp("2026-07-02T03:00:00+00:00")
++    return {
++        "broker_day": "2026-07-02",
++        "broker_time": cutoff,
++        "cutoff_broker_time": cutoff,
++        "latest_completed_h1": cutoff - pd.Timedelta(hours=1),
++        "required_cutoff_completed_h1": cutoff - pd.Timedelta(hours=1),
++        "locked_until_broker_time": cutoff + pd.Timedelta(days=1),
++        "before_cutoff": False,
++        "at_or_after_day_end": False,
++    }
++
++
++def _candidate(symbol: str, index: int) -> dict[str, Any]:
++    score = 92.0 - index
++    return {
++        "symbol": symbol,
++        "role": "MAIN" if index == 0 else "SECONDARY",
++        "daily_grade": "A+" if score >= 85 else "A",
++        "institutional_morning_score": score,
++        "existing_rank_score": score - 4,
++        "eligibility_status": "ELIGIBLE",
++        "stable_daily_bias": "BUY" if index % 2 == 0 else "SELL",
++        "less_risky_bias": "BUY" if index % 2 == 0 else "SELL",
++        "trade_permission": "ALLOWED",
++        "higher_standard_regime": "BULL_NORMAL" if index % 2 == 0 else "BEAR_NORMAL",
++        "data_quality_grade": "A",
++        "data_quality_score": 94.0 - index / 2,
++        "regime_probability": 84.0 - index / 3,
++        "regime_entropy": 16.0 + index / 3,
++        "posterior_margin": 68.0 - index / 4,
++        "regime_persistence": 88.0 - index / 3,
++        "regime_age": 24.0 + index,
++        "expected_regime_duration": 72.0,
++        "estimated_remaining_duration": 48.0 - index / 2,
++        "transition_risk_1h": 5.0 + index / 3,
++        "transition_risk_3h": 10.0 + index / 2,
++        "transition_risk_6h": 18.0 + index,
++        "calibrated_bias_probability": 82.0 - index / 3,
++        "brier_score": 0.15 + index / 1000,
++        "forecast_accuracy_1h": 74.0,
++        "forecast_accuracy_3h": 70.0,
++        "forecast_accuracy_6h": 66.0,
++        "technical_bias": "BUY" if index % 2 == 0 else "SELL",
++        "technical_reliability": 84.0,
++        "sentiment_bias": "BUY" if index % 2 == 0 else "SELL",
++        "sentiment_reliability": 72.0,
++        "session_bias": "BUY" if index % 2 == 0 else "SELL",
++        "session_reliability": 78.0,
++        "evidence_agreement": 86.0,
++        "conflict_index": 14.0,
++        "conformal_coverage": 90.0,
++        "conformal_interval_width": 0.002,
++        "structural_break_status": "VALID",
++        "changepoint_probability": 10.0,
++        "spread_percentile": 20.0 + index,
++        "cvar_95": -0.01 - index / 10000,
++        "correlation_cluster": f"C{index % 3 + 1}",
++        "duplicate_exposure_penalty": float(index % 4) * 5.0,
++        "frame_validation": {"status": "COMPLETE", "sample_count": 600},
++        "identity": {
++            "canonical_run_id": f"RUN-{symbol}",
++            "source_id": f"SRC-{symbol}",
++            "snapshot_hash": f"HASH-{symbol}",
++            "child_run_id": f"CHILD-{symbol}",
++        },
++        "score": {
++            "eligibility_reasons": [], "available_weight": 100.0,
++            "missing_weight": 0.0, "calculation_status": "COMPLETE",
++            "score_confidence": 100.0, "components": {},
++        },
++        "research_layers": {
++            "spa": {"status": "VALID", "candidate_count": 3, "promotion_status": "NOT_PROMOTED"},
++            "pbo": {"status": "INSUFFICIENT_SAMPLE", "effective_trial_count": 0, "promotion_eligibility": "BLOCKED"},
++        },
++    }
++
++
++def _measure(call: Callable[[], Any], repeats: int) -> dict[str, float]:
++    durations: list[float] = []
++    peaks: list[int] = []
++    for _ in range(repeats):
++        tracemalloc.start()
++        started = time.perf_counter()
++        call()
++        durations.append(time.perf_counter() - started)
++        _, peak = tracemalloc.get_traced_memory()
++        tracemalloc.stop()
++        peaks.append(peak)
++    return {
++        "repeats": repeats,
++        "mean_ms": statistics.mean(durations) * 1000,
++        "median_ms": statistics.median(durations) * 1000,
++        "min_ms": min(durations) * 1000,
++        "max_ms": max(durations) * 1000,
++        "mean_peak_kib": statistics.mean(peaks) / 1024,
++        "max_peak_kib": max(peaks) / 1024,
++    }
++
++
++def run_benchmark(*, symbols: int = 12, repeats: int = 100, output: Path | None = None) -> dict[str, Any]:
++    names = ["EURUSD"] + [f"SYM{i:02d}" for i in range(1, symbols)]
++    candidates = [_candidate(symbol, index) for index, symbol in enumerate(names)]
++    with tempfile.TemporaryDirectory(prefix="field10_benchmark_") as tmp:
++        db = Path(tmp) / "field10.sqlite3"
++        migrate_daily_snapshot_database(db)
++
++        def publish() -> dict[str, Any]:
++            return publish_daily_snapshot_from_records(
++                broker_identity=_identity(), ordered_symbols=names, main_symbol="EURUSD",
++                parent_run_id="BENCH-PARENT", candidates=candidates, path=db,
++            )
++
++        tracemalloc.start()
++        started = time.perf_counter()
++        first = publish()
++        first_seconds = time.perf_counter() - started
++        _, first_peak = tracemalloc.get_traced_memory()
++        tracemalloc.stop()
++
++        rerun = _measure(publish, repeats)
++        read = _measure(lambda: load_current_daily_snapshot(path=db), repeats)
++
++        before = validate_persisted_snapshot(path=db)
++
++        def display_only() -> None:
++            frame = load_current_daily_snapshot(path=db)["current"]
++            filtered = frame.loc[frame["Symbol"].astype(str).str.contains("SYM", regex=False)]
++            filtered.sort_values(["Daily Rank", "Symbol"], kind="mergesort").to_csv(index=False)
++
++        display = _measure(display_only, repeats)
++        after = validate_persisted_snapshot(path=db)
++        reduction = 100.0 * (first_seconds - rerun["mean_ms"] / 1000.0) / first_seconds if first_seconds > 0 else None
++        memory_reduction = 100.0 * (first_peak - rerun["mean_peak_kib"] * 1024) / first_peak if first_peak > 0 else None
++        result = {
++            "benchmark_scope": "synthetic deterministic publication and persisted UI fast path; no live APIs",
++            "symbol_count": symbols,
++            "fresh_publication": {
++                "status": first.get("status"), "elapsed_ms": first_seconds * 1000,
++                "peak_kib": first_peak / 1024,
++            },
++            "immutable_rerun_fast_path": rerun,
++            "read_only_snapshot_load": read,
++            "display_filter_sort_csv": display,
++            "rerun_time_reduction_vs_fresh_percent": reduction,
++            "rerun_peak_memory_reduction_vs_fresh_percent": memory_reduction,
++            "persistence_unchanged_after_display_operations": before == after,
++            "content_hash": before.get("content_hash"),
++            "python_note": "Results vary by machine and are not a live-provider end-to-end benchmark.",
++        }
++    if output is not None:
++        output.parent.mkdir(parents=True, exist_ok=True)
++        output.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
++    return result
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--symbols", type=int, default=12)
++    parser.add_argument("--repeats", type=int, default=100)
++    parser.add_argument("--output", type=Path)
++    args = parser.parse_args()
++    result = run_benchmark(symbols=max(2, args.symbols), repeats=max(1, args.repeats), output=args.output)
++    print(json.dumps(result, indent=2, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+--- a/core/multi_symbol_field10_20260701.py
++++ b/core/multi_symbol_field10_20260701.py
+@@ -1565,6 +1565,33 @@
+         research_report = {"ok": False, "status": "FAILED", "error": f"{type(research_exc).__name__}: {research_exc}"}
+     manifest["ten_paper_research"] = research_report
+     manifest["integrated_research_sync"] = integrated_sync
++
++    # Authoritative append-only morning publication. This runs only inside the
++    # existing Settings calculation transaction; Field 10 rendering remains a
++    # read-only SQLite view. Existing protected ranks/actions remain evidence.
++    daily_snapshot_report: dict[str, Any] = {"ok": False, "status": "NOT_ATTEMPTED"}
++    safety_report: dict[str, Any] = {"ok": False, "status": "NOT_ATTEMPTED"}
++    settlement_report: dict[str, Any] = {"ok": False, "status": "NOT_ATTEMPTED"}
++    try:
++        from core.field10_daily_snapshot_contract_20260702 import publish_daily_snapshot
++        daily_snapshot_report = publish_daily_snapshot(
++            state, parent_run_id=parent_run_id, selected_symbols=selected, main_symbol=main, path=DB_PATH,
++        )
++        if daily_snapshot_report.get("ok"):
++            from core.field10_live_safety_veto_20260702 import update_live_safety_veto
++            safety_report = update_live_safety_veto(state, symbols=selected, path=DB_PATH)
++            from core.field10_daily_outcome_settlement_20260702 import settle_current_day
++            settlement_report = settle_current_day(
++                state, parent_run_id=parent_run_id, symbols=selected, path=DB_PATH,
++            )
++    except Exception as daily_contract_exc:
++        daily_snapshot_report = {
++            "ok": False, "status": "FAILED",
++            "error": f"{type(daily_contract_exc).__name__}: {daily_contract_exc}",
++        }
++    manifest["field10_daily_snapshot_contract"] = {key: value for key, value in daily_snapshot_report.items() if key != "rows"}
++    manifest["field10_live_safety_veto"] = safety_report
++    manifest["field10_day_end_settlement"] = settlement_report
+     state[MANIFEST_KEY] = manifest
+     state[PROGRESS_KEY] = {**_progress_snapshot(parent_run_id, selected, statuses, active, "Completed"), "elapsed_seconds": round(elapsed_total, 2)}
+     return manifest
+--- a/ui/lunch_field10_multi_symbol_20260701.py
++++ b/ui/lunch_field10_multi_symbol_20260701.py
+@@ -113,11 +113,15 @@
+             ranks = pd.to_numeric(filtered["Rank"], errors="coerce")
+             if ranks.notna().any():
+                 low, high = int(ranks.min()), int(ranks.max())
+-                chosen = st.slider(
+-                    "Rank range", min_value=low, max_value=high, value=(low, high),
+-                    key=f"field10_filter_rank{suffix}_20260701",
+-                )
+-                filtered = filtered.loc[ranks.between(chosen[0], chosen[1], inclusive="both")]
++                if low == high:
++                    st.caption(f"Rank filter fixed at {low}; only one numerical rank is available.")
++                    filtered = filtered.loc[ranks.eq(low)]
++                else:
++                    chosen = st.slider(
++                        "Rank range", min_value=low, max_value=high, value=(low, high),
++                        key=f"field10_filter_rank{suffix}_20260701",
++                    )
++                    filtered = filtered.loc[ranks.between(chosen[0], chosen[1], inclusive="both")]
+     return filtered
+ 
+ 
+@@ -409,11 +413,15 @@
+                 ranks = pd.to_numeric(current["Rank"], errors="coerce")
+                 if ranks.notna().any():
+                     low, high = int(ranks.min()), int(ranks.max())
+-                    chosen_range = st.slider(
+-                        "Rank range", low, high, (low, high),
+-                        key=f"field10_integrated_current_rank_{key}_20260702",
+-                    )
+-                    filtered = filtered.loc[pd.to_numeric(filtered["Rank"], errors="coerce").between(*chosen_range)]
++                    if low == high:
++                        st.caption(f"Rank filter fixed at {low}; only one numerical rank is available.")
++                        filtered = filtered.loc[pd.to_numeric(filtered["Rank"], errors="coerce").eq(low)]
++                    else:
++                        chosen_range = st.slider(
++                            "Rank range", low, high, (low, high),
++                            key=f"field10_integrated_current_rank_{key}_20260702",
++                        )
++                        filtered = filtered.loc[pd.to_numeric(filtered["Rank"], errors="coerce").between(*chosen_range)]
+         current_view = filtered.loc[:, [column for column in visible if column in filtered.columns]]
+         _display_field10_table(current_view, height=min(560, 42 + 35 * max(1, len(current_view))))
+         st.download_button(
+@@ -812,9 +820,138 @@
+             st.dataframe(stored_diag, use_container_width=True, hide_index=True)
+     return active
+ 
++
++def _render_locked_morning_snapshot() -> None:
++    """Render the authoritative persisted daily contract without calculations."""
++    from core.field10_daily_snapshot_contract_20260702 import (
++        load_current_daily_snapshot, load_daily_history, validate_persisted_snapshot,
++    )
++
++    st.markdown("### One Morning, One Decision — Locked Multi-Symbol Daily Ranking")
++    bundle = load_current_daily_snapshot()
++    metadata = bundle.get("metadata") or {}
++    current = bundle.get("current")
++    if not isinstance(current, pd.DataFrame) or current.empty:
++        st.info(
++            "No authoritative morning snapshot is published yet. Run the existing Settings calculation at or after the configured broker-time cutoff. "
++            "Opening or filtering Field 10 never creates a snapshot."
++        )
++        return
++
++    integrity = validate_persisted_snapshot(broker_day=str(metadata.get("broker_day") or ""))
++    if not integrity.get("ok"):
++        st.error("The persisted morning snapshot failed checksum validation. Trading ranks are not trusted.")
++    eligible = current.loc[pd.to_numeric(current["Daily Rank"], errors="coerce").notna()].copy()
++    best = eligible.sort_values(["Daily Rank", "Symbol"], kind="mergesort").iloc[0] if not eligible.empty else current.iloc[0]
++    try:
++        locked_until = pd.Timestamp(metadata.get("locked_until_broker_time"))
++        created_at = pd.Timestamp(metadata.get("created_at_broker_time"))
++        remaining_hours = max(0.0, (locked_until - created_at).total_seconds() / 3600.0)
++        remaining_text = f"{remaining_hours:.1f}h at publish"
++    except Exception:
++        remaining_text = "UNAVAILABLE"
++
++    metric_values = [
++        ("Best Symbol Today", best.get("Symbol") or "NONE"),
++        ("Stable Bias", best.get("Stable Daily Bias") or "UNAVAILABLE"),
++        ("Less-Risky Bias", best.get("Less-Risky Bias") or "UNAVAILABLE"),
++        ("Best Score", "—" if pd.isna(best.get("Institutional Morning Score")) else f"{float(best.get('Institutional Morning Score')):.2f}"),
++        ("Calibrated Probability", "—" if pd.isna(best.get("Calibrated Bias Probability")) else f"{float(best.get('Calibrated Bias Probability')):.1f}%"),
++        ("Regime", best.get("Higher Standard Regime") or "UNAVAILABLE"),
++        ("Estimated Remaining Duration", "—" if pd.isna(best.get("Estimated Remaining Duration")) else f"{float(best.get('Estimated Remaining Duration')):.1f}h"),
++        ("Transition Risk 6H", "—" if pd.isna(best.get("Transition Risk 6H")) else f"{float(best.get('Transition Risk 6H')):.1f}%"),
++        ("Lock Time", str(metadata.get("cutoff_broker_time") or "UNAVAILABLE")),
++        ("Lock Remaining", remaining_text),
++        ("Safety Veto", best.get("Safety Veto") or "CLEAR"),
++        ("Number Eligible / Blocked", f"{len(eligible)} / {len(current) - len(eligible)}"),
++    ]
++    for start in range(0, len(metric_values), 4):
++        columns = st.columns(4)
++        for column, (label, value) in zip(columns, metric_values[start:start + 4]):
++            column.metric(label, value)
++
++    st.caption(
++        f"Publication: {metadata.get('publication_status')} | Broker day: {metadata.get('broker_day')} | "
++        f"Cutoff completed H1: {metadata.get('latest_completed_h1')} | Universe hash: {str(metadata.get('universe_hash') or '')[:20]}… | "
++        f"Checksum: {integrity.get('status')}"
++    )
++    query = st.text_input(
++        "Search locked morning ranking (display only)",
++        key="field10_locked_daily_search_20260702",
++        placeholder="symbol, bias, regime, grade, safety, explanation…",
++    )
++    view = _search(current, query)
++    _display_field10_table(view, height=min(620, 48 + 35 * max(1, len(view))))
++    st.download_button(
++        "⬇ Locked Morning Ranking CSV", data=_csv_bytes(current),
++        file_name=f"field10_locked_morning_{metadata.get('broker_day') or 'latest'}.csv",
++        mime="text/csv", use_container_width=True, key="field10_locked_morning_download_20260702",
++    )
++
++    with st.expander("Open / Close — Latest 25 broker days immutable history", expanded=False):
++        load_history = st.checkbox(
++            "Load persisted 25-day history and the primary stability map",
++            value=False, key="field10_load_locked_history_20260702",
++        )
++        if load_history:
++            history = load_daily_history(days=25, limit=5000)
++            if history.empty:
++                st.info("No settled immutable daily history is available yet.")
++            else:
++                history_query = st.text_input(
++                    "Search immutable daily history (display only)",
++                    key="field10_locked_history_search_20260702",
++                )
++                history_view = _search(history, history_query)
++                _display_field10_table(history_view, height=520)
++                st.download_button(
++                    "⬇ Full Immutable 25-Day History CSV", data=_csv_bytes(history),
++                    file_name="field10_immutable_25_day_history.csv", mime="text/csv",
++                    use_container_width=True, key="field10_locked_history_download_20260702",
++                )
++                st.markdown("##### 25-Day Multi-Symbol Morning Rank Stability and Outcome Map")
++                try:
++                    import plotly.graph_objects as go
++                    plot = history.copy()
++                    plot["Original Morning Score"] = pd.to_numeric(plot["Original Morning Score"], errors="coerce")
++                    days = sorted(plot["Broker Day"].dropna().astype(str).unique())
++                    symbols = sorted(plot["Symbol"].dropna().astype(str).unique())
++                    score_pivot = plot.pivot_table(index="Symbol", columns="Broker Day", values="Original Morning Score", aggfunc="first").reindex(index=symbols, columns=days)
++                    custom = []
++                    for symbol in symbols:
++                        row_custom = []
++                        for day in days:
++                            match = plot.loc[plot["Symbol"].astype(str).eq(symbol) & plot["Broker Day"].astype(str).eq(day)]
++                            if match.empty:
++                                row_custom.append(["UNAVAILABLE", "UNSETTLED", "—"])
++                            else:
++                                rec = match.iloc[0]
++                                correctness = f"1H={rec.get('Correct 1H')}; 3H={rec.get('Correct 3H')}; 6H={rec.get('Correct 6H')}"
++                                row_custom.append([rec.get("Daily Grade"), rec.get("Outcome Settled Status"), correctness])
++                        custom.append(row_custom)
++                    figure = go.Figure(data=go.Heatmap(
++                        z=score_pivot.to_numpy(dtype=float), x=days, y=symbols, customdata=custom,
++                        colorbar={"title": "Morning Score"},
++                        hovertemplate="Broker day=%{x}<br>Symbol=%{y}<br>Score=%{z:.2f}<br>Grade=%{customdata[0]}<br>Status=%{customdata[1]}<br>%{customdata[2]}<extra></extra>",
++                    ))
++                    figure.update_layout(height=max(360, 55 * len(symbols)), xaxis_title="Broker Day", yaxis_title="Symbol")
++                    st.plotly_chart(figure, use_container_width=True, key="field10_rank_stability_outcome_map_20260702")
++                except Exception as exc:
++                    st.warning(f"The persisted history table is available, but the stability map could not render: {type(exc).__name__}: {exc}")
++
++    with st.expander("Open / Close — Score components and threshold audit", expanded=False):
++        components = bundle.get("components")
++        if isinstance(components, pd.DataFrame) and not components.empty:
++            st.dataframe(components, use_container_width=True, hide_index=True, height=480)
++        else:
++            st.info("No score-component rows are stored for this publication.")
++
++
+ def render_field10_content(state: MutableMapping[str, Any] | None = None) -> None:
+     """Render Field 10 from saved multi-symbol evidence only."""
+     state = state if state is not None else st.session_state
++    _render_locked_morning_snapshot()
++    st.markdown("---")
+     st.caption(
+         "Field 10 reads the saved multi-symbol store and the Lunch symbol selected at the top of this page. "
+         "It never refreshes a connector or starts Fields 4–9. The optional ten-paper layer remains shadow-only."

@@ -1,0 +1,14 @@
+STREAMLIT CLOUD DEPLOYMENT REPAIR TEST REPORT
+Date: 2026-07-03
+
+PASS  Complete repository compileall
+PASS  1,639 internal imports checked; 0 missing
+PASS  Regression batch 1: 93 tests
+PASS  Regression batch 2: 106 tests
+PASS  Regression batch 3: 49 tests
+PASS  Regression batch 4: 53 tests
+TOTAL 301 tests passed
+PASS  10/10 protected upload hashes unchanged
+PASS  Secret scan: 0 embedded API-key findings
+PASS  App import with every *_v9_parts directory removed
+PASS  app.run_app callable in no-V9-parts deployment simulation

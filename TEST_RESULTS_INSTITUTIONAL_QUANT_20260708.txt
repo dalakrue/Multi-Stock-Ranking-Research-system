@@ -1,0 +1,35 @@
+Test Results — Institutional Quant Upgrade 20260708
+
+1) Syntax / import-adjacent compile checks
+Command:
+python -m py_compile app.py adx_dashpoard.py core/institutional_quant_migration_20260708.py core/institutional_quant_layer_20260708.py core/data/market_data_orchestrator.py core/multi_symbol_load_manager_20260707.py core/settings_run_orchestrator_20260617.py core/current_result_sync_20260708.py tabs/antd_page_router_20260615.py tabs/dinner_unified_center_20260617.py tabs/research.py tabs/ai_assistant_lite.py ui/lunch_field10_multi_symbol_20260701.py ui/lunch_field11_similar_path_20260702.py ui/lunch_four_core_fields_20260619.py
+Result: PASS
+
+2) Institutional unit tests
+Command:
+pytest -q tests/test_institutional_quant_20260708.py
+Result: PASS — 4 passed
+Coverage of tests:
+- Idempotent migration creates requested tables and repairs schema_migrations shape.
+- canonical_symbols preserves order, deduplicates symbols, and normalizes symbol names.
+- Provider route uses FCS_API_MAIN first and TWELVE_DATA_KEY_POOL fallback.
+- Super Quick institutional publisher creates Field 10, Field 3, Field 11, News/NLP, Research, missing-symbol reason, and H4 timeframe rows from one canonical universe.
+
+3) Streamlit app import / entrypoint check
+Command attempted:
+python - <<'PY'
+import app
+import adx_dashpoard
+from core.app_shell import run_app
+print('APP_IMPORT_OK')
+print(callable(run_app))
+PY
+Result in this sandbox: BLOCKED by environment dependency: ModuleNotFoundError: No module named 'streamlit'.
+Reason: Streamlit is listed in requirements.txt and requirements-core.txt, but it is not installed in the execution sandbox used for this repair. app.py and adx_dashpoard.py passed py_compile; full runtime import should be run in the project environment after installing requirements.
+
+4) Migration run against project database
+Command:
+from core.institutional_quant_migration_20260708 import migrate_institutional_quant_schema
+from core.data.deployment_migrations_20260705 import DEFAULT_DB_PATH
+migrate_institutional_quant_schema(DEFAULT_DB_PATH)
+Result: PASS — tables created/verified, version 2026070803.

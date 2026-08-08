@@ -1,0 +1,117 @@
+{
+  "checks": {
+    "all_reload_valid": true,
+    "display_authorities_agree": true,
+    "distinct_child_snapshot_hashes": true,
+    "distinct_exact_symbol_sources": true,
+    "fallback_truthfully_labelled": true,
+    "field1_load_changed_identity": true,
+    "field2_load_changed_bundle": true,
+    "h4_required_150": true,
+    "session_clear_sqlite_reload": true,
+    "settings_main_symbol_unchanged": true,
+    "sqlite_has_ten_children": true,
+    "sqlite_has_ten_powerbi_bundles": true,
+    "sqlite_integrity": true,
+    "ten_symbols_completed": true
+  },
+  "completed_symbols": [
+    "EURUSD",
+    "USDJPY",
+    "AUDUSD",
+    "GBPUSD",
+    "USDCAD",
+    "USDCHF",
+    "EURJPY",
+    "GBPJPY",
+    "EURGBP",
+    "NZDUSD"
+  ],
+  "database": {
+    "completed_children": 10,
+    "integrity": "ok",
+    "path": "test_artifacts/h4_acceptance_20260706/acceptance.sqlite3",
+    "powerbi_bundles": 10
+  },
+  "display_authorities": {
+    "canonical_display_symbol_20260705": "AUDUSD",
+    "field10_display_symbol_20260706": "AUDUSD",
+    "field11_display_symbol_20260706": "AUDUSD",
+    "field1_display_symbol_20260706": "AUDUSD",
+    "field2_display_symbol_20260706": "AUDUSD",
+    "field3_display_symbol_20260706": "AUDUSD",
+    "lunch_display_symbol_20260702": "AUDUSD",
+    "multi_symbol_active_20260701": "AUDUSD"
+  },
+  "field1_load": {
+    "full_runtime_restored": true,
+    "ok": true,
+    "path": "test_artifacts/h4_acceptance_20260706/multi_symbol_runtime/USDJPY.pkl.gz",
+    "restored_keys": 34,
+    "seconds": 0.0008,
+    "status": "COMPLETE_CHILD_RESTORED",
+    "symbol": "USDJPY"
+  },
+  "field2_load": {
+    "full_runtime_restored": true,
+    "ok": true,
+    "path": "test_artifacts/h4_acceptance_20260706/multi_symbol_runtime/AUDUSD.pkl.gz",
+    "restored_keys": 34,
+    "seconds": 0.0017,
+    "status": "COMPLETE_CHILD_RESTORED",
+    "symbol": "AUDUSD"
+  },
+  "field2_loaded_symbol": "AUDUSD",
+  "live_api_credentials_used": false,
+  "migration": {
+    "added_columns": {
+      "canonical_symbol_results_20260705": [],
+      "field10_daily_higher_lock": [],
+      "field10_daily_snapshot": [],
+      "field10_daily_snapshot_symbol": [],
+      "field10_hourly_quality": [],
+      "field10_integrated_evidence_history": [],
+      "field11_results_20260705": [],
+      "multi_symbol_runs": []
+    },
+    "backup": "",
+    "migration_id": "20260706_timeframe_identity_child_publication_v1",
+    "ok": true,
+    "path": "test_artifacts/h4_acceptance_20260706/acceptance.sqlite3",
+    "status": "MIGRATED"
+  },
+  "mode": "DETERMINISTIC_OFFLINE_FIXTURE",
+  "ok": true,
+  "real_data_availability": {
+    "reason": "No live API credentials were used; deterministic real-structure OHLC fixtures validate plumbing only.",
+    "status": "NOT_EVALUATED_IN_OFFLINE_TEST"
+  },
+  "reload_after_session_clear": {
+    "AUDUSD": "COMPLETE_CHILD_RESTORED",
+    "EURGBP": "COMPLETE_CHILD_RESTORED",
+    "EURJPY": "COMPLETE_CHILD_RESTORED",
+    "EURUSD": "COMPLETE_CHILD_RESTORED",
+    "GBPJPY": "COMPLETE_CHILD_RESTORED",
+    "GBPUSD": "COMPLETE_CHILD_RESTORED",
+    "NZDUSD": "COMPLETE_CHILD_RESTORED",
+    "USDCAD": "COMPLETE_CHILD_RESTORED",
+    "USDCHF": "COMPLETE_CHILD_RESTORED",
+    "USDJPY": "COMPLETE_CHILD_RESTORED"
+  },
+  "report_path": "test_artifacts/h4_acceptance_20260706/h4_acceptance_result.json",
+  "selected_symbols": [
+    "EURUSD",
+    "USDJPY",
+    "AUDUSD",
+    "GBPUSD",
+    "USDCAD",
+    "USDCHF",
+    "EURJPY",
+    "GBPJPY",
+    "EURGBP",
+    "NZDUSD"
+  ],
+  "status": "PASSED",
+  "timeframe": "H4",
+  "version": "offline-h4-acceptance-20260706-v1"
+}

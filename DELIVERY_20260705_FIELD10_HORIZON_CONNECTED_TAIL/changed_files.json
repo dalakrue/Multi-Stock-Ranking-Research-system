@@ -1,0 +1,30 @@
+{
+  "application_added": [
+    "core/field10_fx_connectedness_20260705.py",
+    "core/field10_gas_tailrisk_20260705.py",
+    "core/field10_har_semivariance_20260705.py",
+    "core/field10_model_selection_20260705.py",
+    "core/field10_rank_utility_v2_20260705.py",
+    "core/field10_research_common_20260705.py",
+    "core/field10_research_orchestrator_20260705.py",
+    "core/field10_research_readonly_20260705.py",
+    "scripts/migrate_field10_horizon_connected_tail_20260705.py",
+    "scripts/run_field10_horizon_connected_tail_validation_20260705.py",
+    "tests/test_field10_horizon_connected_tail_candidate_20260705.py"
+  ],
+  "modified": [
+    "core/multi_symbol_field10_20260701.py",
+    "data/multi_symbol_field10_20260701.sqlite3",
+    "ui/lunch_field10_multi_symbol_20260701.py"
+  ],
+  "database_backups_added": [
+    "data/backups/multi_symbol_field10_20260701.pre_20260705_field10_horizon_connected_tail_candidate_v1.20260705T095613Z.sqlite3"
+  ],
+  "deleted": [],
+  "transient_files_ignored": [
+    "*.pyc",
+    "__pycache__",
+    ".pytest_cache",
+    "SQLite -wal/-shm"
+  ]
+}

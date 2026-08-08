@@ -1,0 +1,25 @@
+{
+  "date": "2026-07-07",
+  "entry_point": "app.py",
+  "test_files": 59,
+  "collected_tests": 558,
+  "passed_tests": 558,
+  "failed_tests": 0,
+  "bounded_batch_results": [
+    {"files": "1-10", "passed": 96},
+    {"files": "11-20", "passed": 146},
+    {"files": "21-30", "passed": 111},
+    {"files": "31-40", "passed": 79},
+    {"files": "41-50", "passed": 72},
+    {"files": "51-59", "passed": 54}
+  ],
+  "focused_three_selector_tests": 16,
+  "final_affected_ui_tests": 26,
+  "python_files_parsed": 1256,
+  "python_syntax_failures": 0,
+  "streamlit_startup_smoke": "PASS",
+  "migration_smoke": "PASS",
+  "live_provider_tested": false,
+  "live_secret_used": false,
+  "note": "The 18-symbol final scenario used controlled deterministic H4 OHLC fixtures to verify orchestration and identity safety; it is not live market/provider evidence."
+}

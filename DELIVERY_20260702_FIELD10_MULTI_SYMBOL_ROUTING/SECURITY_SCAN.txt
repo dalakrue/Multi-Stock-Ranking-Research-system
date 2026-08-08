@@ -1,0 +1,7 @@
+PACKAGE SECURITY SCAN — 2026-07-02
+
+Forbidden runtime/secret files:
+NONE
+
+Exposed-key pattern scan:
+NONE

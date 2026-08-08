@@ -1,0 +1,28 @@
+TEST REPORT — FIELD 3 / FIELD 10 MULTI-SYMBOL SYNC REPAIR
+Date: 2026-07-03
+
+1. Python compile validation
+   Command: python -m compileall -q core ui tests app.py adx_dashpoard.py
+   Result: PASS
+
+2. Entire project test suite (all 38 test files, executed in four bounded batches)
+   Batch 1: 93 passed
+   Batch 2: 106 passed (6 sklearn single-label warnings)
+   Batch 3: 41 passed (3 sklearn single-label warnings)
+   Batch 4: 61 passed
+   Total: 301 passed, 0 failed
+
+3. New repair-specific tests
+   - Higher Standard resolver does not borrow Lower/Middle rows
+   - NZDUSD canonical state repairs stale EURUSD selector identity
+   - Top-10 Plan B builds all three Field 3 standards
+   - Field 10 top table ranks every selected symbol with BUY/SELL from exact-symbol evidence
+   - Field 10 top-table placement and Field 3 Top-10 UI contract
+   Result: 5 passed
+
+4. Streamlit startup smoke test
+   Entry point: app.py
+   Health endpoint: /_stcore/health
+   Result: PASS (returned "ok")
+
+No test failure remains in the supplied project test suite.

@@ -1,0 +1,12 @@
+core/data/symbol_level_provider_registry_20260708.py
+core/data/market_data_orchestrator.py
+core/data/deployment_migrations_20260705.py
+core/data/candle_repository.py
+core/multi_symbol_load_manager_20260707.py
+ui/multi_symbol_settings_20260701.py
+ui/provider_health_panel_20260705.py
+tabs/antd_page_router_20260615.py
+ui/lunch_field10_multi_symbol_20260701.py
+tests/test_foreground_symbol_router_20260708.py
+FOREGROUND_SYMBOL_ROUTER_REPORT_20260708.md
+CHANGED_FILES_FOREGROUND_SYMBOL_ROUTER_20260708.txt

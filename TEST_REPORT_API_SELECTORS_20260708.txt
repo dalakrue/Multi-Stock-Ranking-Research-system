@@ -1,0 +1,46 @@
+ADX Quant Pro API/Selector Repair Verification — 2026-07-08
+
+TASK-SPECIFIC + RELATED LEGACY TEST COMMAND
+PYTHONPATH="$PWD" pytest -q \
+  tests/test_api_selector_connection_repair_20260708.py \
+  tests/test_market_data_recovery_20260708.py \
+  tests/test_fast_multi_symbol_loading_20260708.py \
+  tests/test_provider_selector_capacity_20260708.py \
+  tests/test_api_selector_publication_repair_20260707.py \
+  tests/test_load_first_generation_fix_20260707.py \
+  tests/test_adaptive_cumulative_selector_repair_20260707.py \
+  tests/test_three_selector_consolidation_20260707.py \
+  tests/test_three_selector_cumulative_20260706.py \
+  tests/test_settings_h4_autoconnect_quota_20260706.py \
+  tests/test_deployment_readiness_upgrade_20260705.py --disable-warnings
+
+RESULT
+97 passed in 9.86s
+
+NEW REGRESSION FILE
+24 passed
+
+COMPILATION
+python -m compileall -q app.py core ui tabs scripts tests
+RESULT: PASS
+
+IMPORT SMOKE TEST
+core.app.refresh: PASS
+core.connector_state_machine_20260621: PASS
+core.data.market_data_orchestrator: PASS
+core.multi_symbol_load_manager_20260707: PASS
+core.multi_symbol_run_groups_20260706: PASS
+core.normalized_multi_symbol_migration_20260707: PASS
+ui.multi_symbol_settings_20260701: PASS
+ui.provider_health_panel_20260705: PASS
+ui.sidebar_fallback_panel: PASS
+
+STREAMLIT STARTUP
+streamlit run app.py --server.headless true --server.port 8791
+RESULT: PASS — server started; no matching traceback/import/syntax/duplicate-widget/ambiguous-truth error in startup log.
+
+FULL HISTORICAL SUITE
+606 tests collected. The monolithic run exceeded the execution window after progressing through approximately the first quarter. This is recorded as incomplete, not as a pass.
+
+LIVE PROVIDER ACCEPTANCE
+NOT EXECUTED: no usable API secrets or authenticated deployed browser were included. No live-entitlement claim is made.

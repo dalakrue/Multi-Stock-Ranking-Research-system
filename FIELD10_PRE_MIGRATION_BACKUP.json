@@ -1,0 +1,10 @@
+{
+  "source": "/mnt/data/field10_work/ADX_QUANT_PRO_FIELD10_CROWD_FINAL_20260704/data/multi_symbol_field10_20260701.sqlite3",
+  "backup": "/mnt/data/field10_work/ADX_QUANT_PRO_FIELD10_CROWD_FINAL_20260704/backups/multi_symbol_field10_20260701.pre_institutional_upgrade_20260704T125909Z.sqlite3",
+  "source_sha256": "41b83755c80290831b237448dea6fde44138e13acab9f88fc460afaeb06c64ce",
+  "backup_sha256": "41b83755c80290831b237448dea6fde44138e13acab9f88fc460afaeb06c64ce",
+  "hash_match": true,
+  "backup_integrity_check": [
+    "ok"
+  ]
+}

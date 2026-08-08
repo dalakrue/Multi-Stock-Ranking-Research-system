@@ -1,0 +1,46 @@
+[
+  {
+    "index": 1,
+    "file": "research_quant/tests/test_crcef_sv.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.833,
+    "passed": 5,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/research_quant__tests__test_crcef_sv.py.log"
+  },
+  {
+    "index": 2,
+    "file": "research_quant/tests/test_persistence.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.818,
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/research_quant__tests__test_persistence.py.log"
+  },
+  {
+    "index": 3,
+    "file": "tests/test_20260627_user_table_contract.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.797,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_20260627_user_table_contract.py.log"
+  },
+  {
+    "index": 4,
+    "file": "tests/test_20260628_na_regime_dinner_finder_repairs.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 4.127,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_20260628_na_regime_dinner_finder_repairs.py.log"
+  }
+]

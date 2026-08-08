@@ -1,0 +1,30 @@
+Test Results — Canonical Symbol Selector Repair 20260709
+
+1) Full Python compile check
+Command:
+python - <<'PY'
+import py_compile, pathlib
+files=[p for p in pathlib.Path('.').rglob('*.py') if '__pycache__' not in str(p)]
+fail=[]
+for p in files:
+    try:
+        py_compile.compile(str(p), doraise=True)
+    except Exception as e:
+        fail.append((str(p), type(e).__name__, str(e)))
+print('files', len(files), 'fail', len(fail))
+PY
+Result: PASS — 1282 Python files compiled, 0 failures.
+
+2) Targeted tests
+Command:
+pytest -q tests/test_institutional_quant_20260708.py tests/test_canonical_symbol_selector_20260709.py
+Result: PASS — 7 passed.
+
+What the tests prove:
+- Canonical symbol list is ordered, deduplicated, and does not append old default EURUSD when a canonical snapshot exists.
+- Field symbol activation updates Lunch/Field1/Field2/Field10/Field11-compatible display keys without requiring a complete child publication.
+- Field-level filtering changes the displayed data for a selected symbol.
+- Institutional migration/ranking/Field3/Field11/news/research snapshot tests still pass.
+
+3) Streamlit runtime note
+The sandbox used for this repair does not have Streamlit installed, so full app import/runtime cannot be executed here. The code passed py_compile and unit tests. Run in the project environment with requirements installed for Streamlit UI smoke testing.

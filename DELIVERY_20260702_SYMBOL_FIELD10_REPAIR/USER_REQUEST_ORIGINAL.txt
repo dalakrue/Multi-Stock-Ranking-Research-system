@@ -1,0 +1,924 @@
+Inspect, diagnose, repair, optimize, test and package the attached complete ADX Quant Pro Streamlit project.
+
+Do not begin by adding more visual elements. First repair the symbol-identity, child-publication, durable-generation and Field 10 data contracts that are causing empty Field 10 output and USDJPY symbol contamination.
+
+PRIMARY PRIORITIES
+
+Priority 1:
+Permanently repair Lunch Field 10 and the complete multi-symbol Settings → calculation → snapshot → Lunch routing.
+
+Priority 2:
+Reduce the measured wall-clock time of “Run Calculation + Open Lunch” by 30–50% without changing protected calculation results.
+
+Priority 3:
+Persist and restore the latest valid completed calculation across browser refresh, closing the tab, reopening the application and ordinary Streamlit reruns until the next completed selected-timeframe candle becomes available.
+
+Priority 4:
+Add the ten advanced quant research methods below in shadow mode only.
+
+==================================================
+1. NON-NEGOTIABLE PROTECTION RULES
+==================================================
+
+Do not delete, replace, rename, simplify, average, weaken or silently modify any existing:
+
+- Field 1–10 formula.
+- Technical calculation.
+- Sentiment calculation.
+- Session calculation.
+- Data-mining calculation.
+- Lower, Middle or Higher regime calculation.
+- BUY, SELL or WAIT rule.
+- Threshold or weight.
+- KNN or Greedy priority.
+- Prediction model.
+- Final action.
+- Less-risky action.
+- History source.
+- Outcome settlement.
+- Broker-time rule.
+- Canonical run identity.
+- Table.
+- Metric.
+- Chart.
+- Export.
+- AI fact.
+- Existing valid database history.
+
+New research outputs must be separate shadow columns and tables until they pass chronological validation and an explicit promotion gate.
+
+Never fabricate Field 10 results merely to prevent an empty table.
+
+However, whenever genuine saved Field 1 Table 4 and Field 3 evidence exists for a completed symbol generation, Field 10 must successfully publish and display that real evidence.
+
+==================================================
+2. AUDIT THE ACTUAL ROOT CAUSES
+==================================================
+
+Inspect at minimum:
+
+- ui/top_status_bar.py
+- ui/multi_symbol_settings_20260701.py
+- ui/lunch_four_core_fields_20260619.py
+- ui/lunch_field10_multi_symbol_20260701.py
+- ui/lunch_next_hour_bias_history_20260626.py
+- ui/canonical_copy_export_20260619.py
+- services/current_canonical_copy_20260625.py
+- core/multi_symbol_field10_20260701.py
+- core/field10_integrated_evidence_20260702.py
+- core/runtime_state_cache_20260628.py
+- core/settings_run_orchestrator_20260617.py
+- core/settings_one_click_controller_20260624.py
+- core/canonical_runtime_20260617.py
+- core/canonical_lookup_20260626.py
+- core/shared_broker_time_20260622.py
+- core/v9_architecture_guard_20260702.py
+
+Verify these known risks from the uploaded project:
+
+1. ui/top_status_bar.py reads generic session_state["symbol"] rather than the Lunch display symbol.
+
+2. ui/multi_symbol_settings_20260701.py repeatedly writes the main symbol into:
+   - symbol
+   - selected_symbol
+   - ws_symbol
+
+3. Lunch Fields 1–3 and Field 10 use separate ACTIVE_KEY and DISPLAY_SYMBOL_KEY values.
+
+4. A child symbol can currently become COMPLETED when runtime caching succeeds even if Field 1 Table 4 → Field 10 publication fails.
+
+5. publish_field1_table4_to_field10() may call activate_symbol_result() and mutate shared active state during publication.
+
+6. Field 10 loads current evidence by parent_run_id without a reliable active-symbol recovery path.
+
+7. Copy-button caching is based on canonical generation identity but is not sufficiently Lunch-symbol-aware.
+
+8. Runtime restoration is based on broad cache age rather than a selected-timeframe valid_until boundary.
+
+9. Check and remove the duplicated key= argument found in the Settings active-symbol selectbox.
+
+10. Detect every slider where min_value can equal max_value and render a non-slider fallback for that case.
+
+Produce a root-cause report before claiming any repair is complete.
+
+==================================================
+3. CREATE ONE AUTHORITATIVE SYMBOL CONTEXT
+==================================================
+
+Create a typed SymbolContext object or equivalent immutable mapping containing:
+
+- settings_main_symbol
+- connector_symbol
+- calculation_symbol
+- lunch_display_symbol
+- active_snapshot_symbol
+- selected_symbols
+- timeframe
+- parent_run_id
+- child_run_id
+- canonical_run_id
+- source_id
+- snapshot_hash
+- completed_broker_candle
+- generation_status
+- valid_until
+
+Do not use generic session_state["symbol"] as the universal authority.
+
+Required ownership rules:
+
+A. settings_main_symbol
+
+- Selected only in Settings.
+- Owns Fields 4–9 and AI.
+- Owns the main connector context.
+- Must be first in all Settings and Lunch symbol lists.
+- Must never silently change to USDJPY.
+
+B. lunch_display_symbol
+
+- Controls Lunch Fields 1, 2, 3 and 10.
+- Controls the Lunch top MARKET card.
+- Controls both Lunch copy buttons.
+- Can change without changing settings_main_symbol.
+- Can change without reconnecting an API.
+- Can change without recalculating any field.
+
+C. calculation_symbol
+
+- Exists only while a child symbol is being calculated.
+- Must not become the permanent Lunch or Settings symbol.
+- Must be removed or restored safely after child publication.
+
+D. connector_symbol
+
+- Must not be changed merely because the user selects a saved Lunch symbol.
+
+E. active_snapshot_symbol
+
+- Must equal lunch_display_symbol before Fields 1–3, Field 10 and copy payloads render.
+
+Add one authoritative resolver:
+
+resolve_symbol_context(
+    state,
+    route,
+    requested_lunch_symbol=None
+) -> SymbolContext
+
+All top cards, Fields 1–3, Field 10 and copy buttons must use this resolver.
+
+==================================================
+4. REMOVE USDJPY LOCKING AND SYMBOL CONTAMINATION
+==================================================
+
+Search the complete project for:
+
+- "USDJPY"
+- state["symbol"]
+- state.get("symbol")
+- selected_symbol
+- ws_symbol
+- active_symbol
+- multi_symbol_active_20260701
+- lunch_display_symbol_20260702
+- lunch_symbol_selector_widget_20260702
+- multi_symbol_main_symbol_20260702
+
+Classify every occurrence as:
+
+- Explicit supported-symbol list.
+- Valid user selection.
+- Default.
+- Fallback.
+- Child calculation mutation.
+- Connector mutation.
+- UI display source.
+- Snapshot identity.
+
+USDJPY may remain in the supported-symbol list.
+
+Remove USDJPY as an implicit default or recovery symbol.
+
+The only general default may be EURUSD when no user configuration and no valid saved configuration exists.
+
+When a saved main symbol exists, that saved main symbol must take priority over every default.
+
+When the user chooses EURUSD as main and selects GBPUSD as secondary, required ordering is:
+
+1. EURUSD
+2. GBPUSD
+
+Do not insert USDJPY.
+
+==================================================
+5. REBUILD THE CHILD-SYMBOL PUBLICATION CONTRACT
+==================================================
+
+Do not publish Field 10 by activating and reading mutable global Session State.
+
+For every calculated symbol, construct an immutable ChildGenerationBundle containing:
+
+- SymbolContext.
+- Frozen canonical object.
+- Field 1 Table 4 current row.
+- Field 1 Table 4 last-25-day history.
+- Field 3 Lower standard result.
+- Field 3 Middle standard result.
+- Field 3 Higher standard result.
+- Field 3 history references.
+- Current completed broker candle.
+- Source frame signature.
+- Data-quality result.
+- Protected final action.
+- Runtime snapshot path.
+- Calculation timing and resource metrics.
+
+The publication function must accept the bundle directly:
+
+publish_child_generation_to_field10(bundle)
+
+It must not:
+
+- Call activate_symbol_result().
+- Modify a widget key.
+- Modify settings_main_symbol.
+- Modify lunch_display_symbol.
+- Modify connector_symbol.
+- Read another symbol’s active DataFrame.
+- Recalculate Table 4.
+- Recalculate Field 3.
+- Call any market-data API.
+
+Validate the complete identity tuple:
+
+- parent_run_id
+- child_run_id
+- symbol
+- timeframe
+- canonical_run_id
+- source_id
+- snapshot_hash
+- completed_broker_candle
+
+Publish in one atomic SQLite transaction:
+
+1. Child generation registry.
+2. Field 1 Table 4 current evidence.
+3. Field 1 Table 4 history reference or rows.
+4. Field 3 three-standard evidence.
+5. Field 10 integrated current row.
+6. Field 10 history row.
+7. Child runtime snapshot metadata.
+8. Publication diagnostics.
+
+Enable:
+
+- SQLite WAL mode.
+- Bounded busy timeout.
+- Foreign keys.
+- Unique identity constraints.
+- Rollback on any mandatory publication failure.
+
+After insertion run a verification query for the exact identity.
+
+Example:
+
+SELECT COUNT(*)
+FROM field10_integrated_evidence
+WHERE parent_run_id = ?
+  AND child_run_id = ?
+  AND symbol = ?
+  AND timeframe = ?
+  AND canonical_run_id = ?
+  AND snapshot_hash = ?
+  AND broker_timestamp = ?;
+
+The child symbol must not be marked COMPLETED unless the verified count is at least one and all mandatory artifacts exist.
+
+Required publication statuses:
+
+- INSERTED
+- ALREADY_EXISTS_VALID
+- REPAIRED_FROM_VALID_SNAPSHOT
+- MISSING_TABLE4_CURRENT
+- MISSING_TABLE4_HISTORY
+- MISSING_FIELD3_LOWER
+- MISSING_FIELD3_MIDDLE
+- MISSING_FIELD3_HIGHER
+- IDENTITY_CONFLICT
+- SNAPSHOT_CONFLICT
+- DATABASE_FAILURE
+- PARTIAL
+- COMPLETED
+
+Change the completion rule so that it requires:
+
+- Protected calculation status is completed.
+- Runtime snapshot save is successful.
+- Table 4 current publication is successful.
+- Required Table 4 history is accessible.
+- Field 3 three-standard publication is successful.
+- Field 10 current integrated row is verified.
+- Identity validation passes.
+
+Do not report “Completed” when Table 4 publication failed.
+
+==================================================
+6. IMPLEMENT SAFE SELF-HEALING FOR FIELD 10
+==================================================
+
+When Field 10 opens and the integrated row is missing:
+
+1. Locate the exact child generation using:
+   - parent_run_id
+   - selected symbol
+   - timeframe
+   - completed broker candle
+
+2. Read the saved immutable child runtime snapshot.
+
+3. Confirm the saved snapshot contains genuine:
+   - Field 1 Table 4 evidence.
+   - Field 3 Lower/Middle/Higher evidence.
+   - Matching canonical identities.
+
+4. Republish the genuine saved artifacts into the Field 10 database.
+
+5. Do not call an API.
+
+6. Do not run calculations.
+
+7. Do not rebuild Fields 4–9.
+
+8. Do not copy another symbol’s row.
+
+9. Record REPAIRED_FROM_VALID_SNAPSHOT.
+
+If genuine source artifacts do not exist, display:
+
+- Selected symbol.
+- Parent run ID.
+- Child run ID.
+- Completed broker candle.
+- Exact missing artifact.
+- Publication exception.
+- Recommended action.
+
+Do not display only the generic sentence:
+
+“No identity-verified Field 1 Table 4 evidence was published for this parent run.”
+
+==================================================
+7. EXACT FIELD 10 USER INTERFACE
+==================================================
+
+Field 10 must always render its structural sections, even when a section has no rows.
+
+When data is unavailable, show the correct columns plus an explicit diagnostic row. Never fabricate market values.
+
+Render Field 10 in this order:
+
+A. FIELD 10 SYMBOL SELECTOR
+
+Include one selector inside the Field 10 box.
+
+It must:
+
+- Use the same lunch_display_symbol as the selector at the top of Lunch.
+- Synchronize in both directions.
+- List only valid saved child generations.
+- Place settings_main_symbol first.
+- Load the selected immutable snapshot.
+- Update all Lunch Fields 1–3 and Field 10.
+- Update the top MARKET card.
+- Update Copy Short and Copy Full.
+- Never reconnect an API.
+- Never calculate Fields 4–9.
+- Never start a heavy run.
+
+B. CURRENT COMPLETED H1 INTEGRATED TABLE
+
+For the selected symbol display one current row with columns such as:
+
+- Rank
+- Symbol
+- Role
+- Broker Date
+- Broker Hour
+- Timeframe
+- Current Session
+- Technical Bias
+- Technical Reliability
+- Sentiment Bias
+- Sentiment Reliability
+- Session Bias
+- Session Reliability
+- Data-Mining Bias
+- Higher Standard Regime
+- Regime Bias
+- Regime Probability
+- Regime Entropy
+- Posterior Margin
+- Transition Risk 1H
+- Transition Risk 3H
+- Transition Risk 6H
+- Existing Combined Evidence Bias
+- Evidence Agreement Percentage
+- Conflict Index
+- Calibrated Reliability
+- Drift Status
+- Data Quality Grade
+- Correlation Cluster
+- Duplicate Exposure Penalty
+- Trade Permission
+- Protected Final Action
+- Explanation
+- Publication Status
+
+Do not replace the protected combined bias or final action with a new shadow formula.
+
+C. FIELD 1 TABLE 4 HISTORY — LAST 25 BROKER DAYS
+
+Display the exact saved Table 4 calculation for the active Lunch symbol.
+
+Requirements:
+
+- Completed candles only.
+- Selected symbol only.
+- Selected timeframe only.
+- Broker candle time only.
+- Latest 25 broker days.
+- Approximately 600 rows for H1 when available.
+- Newest row first.
+- Original protected Table 4 columns preserved.
+- No API request.
+- No Field 4–9 calculation.
+- Search and filters.
+- Symbol-aware CSV export.
+- Current identity columns available for audit.
+
+D. FIELD 3 THREE-STANDARD QUICK-LOOK TABLE
+
+Display exactly three primary rows:
+
+1. Lower Standard
+2. Middle Standard
+3. Higher Standard
+
+Columns:
+
+- Symbol
+- Standard
+- Regime
+- Regime Bias
+- Less-Risky Bias
+- Reliability
+- Calibrated Reliability
+- Sample Count
+- Regime Probability
+- Regime Entropy
+- Posterior Margin
+- Regime Age
+- Expected Duration
+- Estimated Remaining Duration
+- Transition Risk 1H
+- Transition Risk 3H
+- Transition Risk 6H
+- Most Likely Next Regime
+- Alpha
+- Delta
+- Delta Acceleration
+- Drift Status
+- Trade Permission
+- Data Quality Grade
+- Canonical Run ID
+- Completed Broker Candle
+
+This table must reuse saved Field 3 results and must not independently recreate the protected regime logic.
+
+E. 25-DAY REGIME HISTORY
+
+Provide a collapsed history section for the selected symbol containing the saved Lower, Middle and Higher standard history, using broker time and current identity validation.
+
+F. CURRENT IDENTITY AND PUBLICATION DIAGNOSTICS
+
+Show:
+
+- Settings main symbol.
+- Lunch display symbol.
+- Active snapshot symbol.
+- Connector symbol.
+- Parent run ID.
+- Child run ID.
+- Canonical run ID.
+- Source ID.
+- Snapshot hash.
+- Completed broker candle.
+- Valid until.
+- Publication status.
+- Snapshot status.
+- Data quality.
+
+==================================================
+8. SYNCHRONIZE THE TOP LUNCH CARDS
+==================================================
+
+Make ui/top_status_bar.py route-aware.
+
+On Settings:
+
+- MARKET must show settings_main_symbol.
+
+On Lunch:
+
+- MARKET must show lunch_display_symbol.
+- Optionally display MAIN separately when it differs.
+
+Do not read generic state["symbol"] directly in the top status renderer.
+
+The Lunch title, top MARKET card, Lunch selector, Fields 1–3, Field 10 and copy controls must all display the same active Lunch symbol.
+
+Add an invariant check:
+
+assert top_market_symbol == lunch_display_symbol
+assert canonical_symbol == lunch_display_symbol
+assert field1_symbol == lunch_display_symbol
+assert field2_symbol == lunch_display_symbol
+assert field3_symbol == lunch_display_symbol
+assert field10_symbol == lunch_display_symbol
+assert copy_symbol == lunch_display_symbol
+
+In production, report an identity diagnostic rather than crashing, but fail automated tests when any invariant is false.
+
+==================================================
+9. UPDATE COPY SHORT AND COPY FULL
+==================================================
+
+Keep exactly two visible buttons:
+
+- Copy Short
+- Copy Full
+
+Before constructing either payload:
+
+1. Resolve lunch_display_symbol.
+2. Activate the matching immutable snapshot.
+3. Confirm canonical symbol equality.
+4. Confirm completed candle equality.
+5. Confirm snapshot hash equality.
+
+Use this cache fingerprint:
+
+- copy_schema_version
+- parent_run_id
+- child_run_id
+- lunch_display_symbol
+- canonical_run_id
+- snapshot_hash
+- completed_broker_candle
+
+Invalidate both payloads whenever lunch_display_symbol changes.
+
+Copy Short must include:
+
+- Active Lunch symbol.
+- Completed broker candle.
+- Current Field 1 decision.
+- Current Field 2 projection summary.
+- Field 3 Lower/Middle/Higher quick look.
+- Field 10 integrated current row.
+- Protected final action.
+- Data quality.
+- Publication status.
+
+Copy Full must include:
+
+- Current Fields 1–3.
+- Field 10 current integrated table.
+- Field 3 three-standard quick-look table.
+- Current identity.
+- Current diagnostics.
+
+Do not include all 600 history rows in clipboard payloads.
+
+The label above the buttons must say:
+
+Current Fields 1–3 + Field 10 Copy — {lunch_display_symbol}
+
+Test:
+
+EURUSD copy payload != GBPUSD copy payload
+
+The symbol change must not call an API and must not start a calculation.
+
+==================================================
+10. DURABLE REFRESH, CLOSE AND REOPEN RESTORATION
+==================================================
+
+Do not attempt to prevent Streamlit from executing its script.
+
+Instead, make startup execution lightweight and restore the latest valid completed generation.
+
+Create a durable GenerationRegistry containing:
+
+- User or profile identifier when available.
+- Last active route.
+- Last open Lunch field.
+- settings_main_symbol.
+- selected_symbols.
+- lunch_display_symbol.
+- timeframe.
+- parent_run_id.
+- child_run_id.
+- canonical_run_id.
+- source_id.
+- snapshot_hash.
+- completed_broker_candle.
+- valid_until.
+- child snapshot paths.
+- schema version.
+- calculation version.
+- publication status.
+- created time.
+- last access time.
+
+Calculate valid_until from the selected timeframe.
+
+For H1:
+
+valid_until =
+completed_broker_candle
++ 1 hour
++ configured broker completion grace.
+
+For M30:
+
+completed_broker_candle
++ 30 minutes
++ grace.
+
+For H4:
+
+completed_broker_candle
++ 4 hours
++ grace.
+
+On browser refresh or application reopen:
+
+1. Load the latest valid registry.
+2. Verify database rows.
+3. Verify snapshot files.
+4. Verify checksum.
+5. Verify schema version.
+6. Verify calculation version.
+7. Hydrate Settings main symbol.
+8. Hydrate selected symbols.
+9. Hydrate Lunch display symbol.
+10. Activate the matching immutable snapshot.
+11. Restore the last route when safe.
+12. Render saved results without API access.
+13. Do not show the application as uncalculated.
+
+A new heavy calculation may run only when:
+
+- The user explicitly presses a force-run button.
+- A new completed selected-timeframe candle exists.
+- Main symbol changed.
+- Selected symbols changed.
+- Timeframe changed.
+- Source signature changed.
+- Calculation version changed.
+- Required snapshot is corrupt or missing.
+- Mandatory publication failed.
+
+A normal widget interaction, page navigation, copy-button click, search filter, browser refresh or reopen during the valid period must not start a heavy calculation.
+
+For Streamlit Cloud or another environment with ephemeral local storage, support an external durable database or object store. Do not rely solely on local Session State or an unverified local cache file.
+
+==================================================
+11. REDUCE QUICK-RUN TIME BY 30–50%
+==================================================
+
+Measure a baseline before optimization.
+
+Benchmark:
+
+- EURUSD only.
+- EURUSD + GBPUSD.
+- EURUSD + GBPUSD + USDJPY.
+- H1.
+- 600 candles.
+- Cold run.
+- Warm unchanged-candle run.
+- New-candle incremental run.
+- Lunch symbol switch.
+- Browser-refresh restoration.
+- Copy-button interaction.
+
+Record:
+
+- Total wall time.
+- CPU time.
+- Peak RSS.
+- API calls.
+- Database queries.
+- Database writes.
+- Serialization time.
+- Field 1 time.
+- Field 2 time.
+- Field 3 time.
+- Field 10 publication time.
+- Per-symbol time.
+- Cache hits.
+- Cache misses.
+
+Optimization requirements:
+
+1. Fetch each provider/symbol/timeframe/completed-candle combination once per parent run.
+
+2. Create one source fingerprint:
+
+   provider
+   symbol
+   timeframe
+   completed_broker_candle
+   row_count
+   last_rows_hash
+   calculation_version
+
+3. Build one shared feature bundle per symbol containing all common OHLC, return, volatility, ADX and session inputs.
+
+4. Reuse that bundle for Fields 1, 2, 3 and 10.
+
+5. Build one regime feature bundle and derive Lower, Middle and Higher results from it.
+
+6. Append only the new completed candle to 25-day history.
+
+7. Do not rebuild all 600 rows when the prior 599 rows are unchanged.
+
+8. Deduplicate all repeated Table 4 builders.
+
+9. Eliminate repeated provider calls during child activation.
+
+10. Use one atomic database transaction per child symbol.
+
+11. Avoid repeatedly opening and closing the same SQLite resource.
+
+12. Cache reusable model and database resources safely.
+
+13. Cache pure DataFrame transforms by immutable fingerprint.
+
+14. Do not serialize the same child snapshot more than once.
+
+15. Do not create copy payloads during unrelated reruns.
+
+16. Put Field 10 filters, symbol selector and copy controls in Streamlit fragments when the installed Streamlit version supports them.
+
+17. Provide a lightweight full-rerun fallback when fragments are unavailable.
+
+18. Lazy-render long history tables.
+
+19. Keep PBO, SPA, Deflated Sharpe and long walk-forward validation outside the normal Quick Run.
+
+20. Run expensive research validation only:
+    - On explicit validation request.
+    - On scheduled daily settlement.
+    - When enough new settled outcomes exist.
+
+21. Compare protected original and optimized outputs using deterministic fixtures.
+
+Acceptance target:
+
+- Minimum 30% median reduction in warm Quick Run wall time.
+- Stretch target 50%.
+- No more than 10% peak-memory increase.
+- Zero additional API calls during Lunch symbol switching.
+- Zero heavy calculations during copy, filtering or refresh restoration.
+- Exact equality for protected calculations.
+
+Do not claim the performance target unless benchmark evidence proves it.
+
+==================================================
+12. ADD TEN RESEARCH METHODS IN SHADOW MODE
+==================================================
+
+Implement documented optional shadow modules based on:
+
+1. Hamilton Markov-switching regime probabilities.
+2. Engle Dynamic Conditional Correlation.
+3. Giacomini–White conditional predictive ability.
+4. Hansen Superior Predictive Ability.
+5. Probability of Backtest Overfitting.
+6. Deflated Sharpe Ratio.
+7. Probability calibration.
+8. Conformal predictive inference.
+9. ADWIN drift detection.
+10. Time-decayed, novelty-adjusted news sentiment.
+
+For each method document:
+
+- Exact paper title.
+- Authors.
+- Formula.
+- Assumptions.
+- Required inputs.
+- Output columns.
+- Minimum sample size.
+- Chronological validation design.
+- Data leakage controls.
+- Computational cost.
+- Cache design.
+- Production promotion criteria.
+- Failure fallback.
+- Current status:
+  - UNAVAILABLE
+  - SHADOW
+  - VALIDATED
+  - PRODUCTION APPROVED
+
+Do not calculate fake PBO, SPA, calibration, DSR or conditional-accuracy values when settled historical outcomes are insufficient.
+
+==================================================
+13. REQUIRED AUTOMATED TESTS
+==================================================
+
+Create tests proving:
+
+1. The selected Settings main symbol is always first.
+2. USDJPY is never inserted unless selected or configured.
+3. Settings main symbol survives reruns.
+4. Lunch display symbol can differ safely from main symbol.
+5. Lunch top MARKET equals Lunch display symbol.
+6. Fields 1–3 equal Lunch display symbol.
+7. Field 10 equals Lunch display symbol.
+8. Copy Short equals Lunch display symbol.
+9. Copy Full equals Lunch display symbol.
+10. Lunch switching does not alter Settings main symbol.
+11. Lunch switching does not alter connector symbol.
+12. Lunch switching performs zero API calls.
+13. Lunch switching performs zero heavy calculations.
+14. A child cannot be COMPLETED when Table 4 publication failed.
+15. A child cannot be COMPLETED when Field 3 publication failed.
+16. Field 10 current row exists for every genuinely completed child.
+17. Field 10 self-heals from a valid saved snapshot.
+18. Self-healing never fabricates evidence.
+19. Table 4 history contains only the selected symbol.
+20. Table 4 history contains only completed candles.
+21. Table 4 history uses broker time.
+22. Three-standard table contains exactly Lower, Middle and Higher rows.
+23. Browser refresh restores the valid generation.
+24. Reopen before valid_until performs zero heavy calculations.
+25. A new completed candle invalidates the old generation correctly.
+26. Copy cache changes after the Lunch symbol changes.
+27. Copy cache does not change during unrelated filter changes.
+28. Equal slider min/max never crashes.
+29. No widget key is modified after widget creation.
+30. No duplicate keyword argument remains.
+31. No incompatible Pandas dtype assignment warning remains.
+32. compileall passes.
+33. Full pytest passes.
+34. Streamlit startup smoke test passes.
+35. Deployment entry-file test passes.
+36. Mobile rendering test passes.
+37. Original protected output equality passes.
+38. Performance benchmark proves or rejects the 30–50% target honestly.
+
+==================================================
+14. DELIVERABLES
+==================================================
+
+Return one complete deployment-ready ZIP containing:
+
+- Repaired source code.
+- Database migrations.
+- Automated tests.
+- Root-cause report.
+- SymbolContext contract.
+- Field 10 publication contract.
+- Field 10 data dictionary.
+- GenerationRegistry schema.
+- Performance baseline.
+- Performance after-results.
+- API request-deduplication report.
+- Persistence and hydration report.
+- Research methodology.
+- Validation limitations.
+- Changed-file manifest.
+- Raw compileall output.
+- Raw pytest output.
+- Streamlit startup evidence.
+- Deployment instructions.
+- Rollback instructions.
+- SHA-256 manifest.
+
+Clearly classify every requirement as:
+
+- Implemented and tested.
+- Implemented but not live-provider verified.
+- Shadow research only.
+- Unavailable because settled data is insufficient.
+- Not completed.
+
+Do not hide failed requirements behind a general success statement.
+Preserve the original project as a complete rollback copy.

@@ -1,0 +1,24 @@
+{
+  "date": "2026-07-07",
+  "scope": "api-selector-child-publication-repair",
+  "focused_tests": {"passed": 7, "failed": 0},
+  "combined_regression": {"passed": 112, "failed": 0, "warnings": 6},
+  "h1_adaptive_case": {
+    "symbol": "USDCAD",
+    "timeframe": "H1",
+    "available_candles": 597,
+    "required_candles": 600,
+    "mode": "ADAPTIVE_PARTIAL_HISTORY",
+    "cache_reload_validation": "PASS",
+    "field1": "PASS",
+    "field2": "PASS",
+    "field3_three_standards": "PASS",
+    "field10": "PASS"
+  },
+  "streamlit_startup": {
+    "command": "streamlit run app.py --server.headless=true --server.port=8765",
+    "status": "STARTED",
+    "termination": "intentional timeout after successful startup"
+  },
+  "live_credentials_used": false
+}

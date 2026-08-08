@@ -1,0 +1,15 @@
+Validation date: 2026-07-08
+
+Commands/results:
+1. python -m compileall -q core ui tabs tests
+   Result: PASS
+2. Reconstructed tabs/antd_page_router_20260615_v9_parts SOURCE_LINES compile
+   Result: PASS (69,840 characters)
+3. PYTHONPATH=/tmp/adx_test_stubs:. pytest -q \
+     tests/test_provider_selector_capacity_20260708.py \
+     tests/test_three_selector_cumulative_20260706.py \
+     tests/test_api_selector_publication_repair_20260707.py \
+     tests/test_deployment_readiness_upgrade_20260705.py
+   Result: 27 passed in 1.32s
+
+Note: A minimal test-only Streamlit import stub was used because Streamlit is not installed in the repair container. The project dependency remains declared in requirements.txt and no runtime Streamlit code was replaced by the stub.

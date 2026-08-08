@@ -1,0 +1,34 @@
+{
+  "pre_direct_rank_query": {
+    "runs": 30,
+    "median_ms": 3.187721000131205,
+    "p95_ms": 5.2423979996092385,
+    "max_ms": 13.296645000082208,
+    "peak_python_bytes": 26222
+  },
+  "post_direct_rank_query": {
+    "runs": 30,
+    "median_ms": 3.8158744998781913,
+    "p95_ms": 4.293193999728828,
+    "max_ms": 4.523109999809094,
+    "peak_python_bytes": 47313
+  },
+  "post_contract_loader": {
+    "runs": 30,
+    "median_ms": 20.510529500143093,
+    "p95_ms": 24.082975999590417,
+    "max_ms": 45.99944100027642,
+    "peak_python_bytes": 332181
+  },
+  "post_shadow_loader": {
+    "runs": 30,
+    "median_ms": 49.8225569999704,
+    "p95_ms": 58.45125199994072,
+    "max_ms": 96.71538500015231,
+    "peak_python_bytes": 568934
+  },
+  "api_request_audit_rows_current": 5,
+  "heavy_run_duration": "NOT_MEASURED_NO_LIVE_PROVIDER_RUN",
+  "database_write_duration": "MIGRATION_RECORDED_SEPARATELY",
+  "claim": "No efficiency improvement claimed because comparable pre-change end-to-end instrumentation was unavailable."
+}

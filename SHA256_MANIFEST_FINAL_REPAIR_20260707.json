@@ -1,0 +1,88 @@
+{
+  "generated_at_utc": "2026-07-07T03:41:26.370109+00:00",
+  "algorithm": "SHA-256",
+  "manifest_self": "excluded to avoid circular hash",
+  "file_count": 16,
+  "files": [
+    {
+      "path": "core/child_snapshot_publication_20260706.py",
+      "bytes": 16944,
+      "sha256": "876b8cbfda2b700ddac4f90c252160900d1e2e7d8cd412e8521aed53aa526cad"
+    },
+    {
+      "path": "core/data/deployment_migrations_20260705.py",
+      "bytes": 11636,
+      "sha256": "796113c5d5cdfe895215ae51db820e19c570467f3fe64e50571f1d8d148d1ad9"
+    },
+    {
+      "path": "core/instant_run_engine_20260705.py",
+      "bytes": 21986,
+      "sha256": "9b3493cb095c5008c013d500457338d9d29375674ad1af8b70e533a9c47f4bc9"
+    },
+    {
+      "path": "core/multi_symbol_completion_contract_20260706.py",
+      "bytes": 20495,
+      "sha256": "8127e479171a58ffcd26cee08115ffcf9d42e01a9d4d668da4a5afa6de1224e3"
+    },
+    {
+      "path": "core/multi_symbol_field10_20260701.py",
+      "bytes": 170555,
+      "sha256": "f7290534fa8dba8e7fb6ab5ad4a1b5288a0f691e761d4be538e49ed11b1cd416"
+    },
+    {
+      "path": "core/multi_symbol_load_manager_20260707.py",
+      "bytes": 17923,
+      "sha256": "0f50b40ab48b11ae01282fe57d32b1b3a5b4763fcfd26c61b7906242ca1ac5f7"
+    },
+    {
+      "path": "core/powerbi_child_bundle_20260706.py",
+      "bytes": 12791,
+      "sha256": "5d3d1cbadabfe729076604cbad2e0be2c4f30d6c76fd2b31339bf4e9d0f304d9"
+    },
+    {
+      "path": "ui/lunch_field10_multi_symbol_20260701.py",
+      "bytes": 154128,
+      "sha256": "7f2768ca8b93e8a5fe59c16ab5f65c9f893f62c47ec6e2954f75ee84344cb0bb"
+    },
+    {
+      "path": "ui/powerbi_cached_renderer_20260619.py",
+      "bytes": 65550,
+      "sha256": "1878b54e88dc16af52303730fcf13001f60d4b8c57c562e1cfcf22cc2cf5ec8b"
+    },
+    {
+      "path": "tests/test_final_repair_20260707.py",
+      "bytes": 6211,
+      "sha256": "5a5a29404ebe7413edcf582a6a775de6cf4bc94812f9595e79348df5eac58bd6"
+    },
+    {
+      "path": "data/multi_symbol_field10_20260701.sqlite3",
+      "bytes": 4427776,
+      "sha256": "48d299b5c2ef11450723b7c5aa463777600f24ac26cd378194fa1121417efa79"
+    },
+    {
+      "path": "FINAL_REPAIR_REPORT_20260707.md",
+      "bytes": 9466,
+      "sha256": "87af29f3be11df31858574f3cb89f2019fbd702a89e09a85719a4140cb6202f6"
+    },
+    {
+      "path": "TEN_ADVANCED_QUANT_RESEARCH_PAPERS_20260707.md",
+      "bytes": 24683,
+      "sha256": "2ecb3861e401736a5b940feaf921bdfde6097c1df1c6861181aba228c07f2b2f"
+    },
+    {
+      "path": "DETAILED_CODEX_COMMAND_20260707.md",
+      "bytes": 11377,
+      "sha256": "35b509ddbe8031b9fdf78881284e6ff7b417532ff22819d0d27e317253ace497"
+    },
+    {
+      "path": "CHANGED_FILES_FINAL_REPAIR_20260707.txt",
+      "bytes": 832,
+      "sha256": "c4a7970902fd89ba29c5adac6ef2dddb4905b3bbe48f1e644a6300f173f2f142"
+    },
+    {
+      "path": "TEST_RESULTS_FINAL_REPAIR_20260707.txt",
+      "bytes": 1641,
+      "sha256": "78f02943480fdcbde782d252886a90832715ee5e74ae197a42bbfb33b7971e9a"
+    }
+  ]
+}

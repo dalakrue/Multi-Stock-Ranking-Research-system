@@ -1,0 +1,75 @@
+{
+  "migration": {
+    "ok": true,
+    "status": "MIGRATED",
+    "migration_id": "20260706_timeframe_identity_child_publication_v1",
+    "added_columns": {
+      "multi_symbol_runs": [
+        "generation_id",
+        "snapshot_hash"
+      ],
+      "field10_hourly_quality": [
+        "completed_candle",
+        "child_run_id",
+        "canonical_run_id",
+        "generation_id",
+        "snapshot_hash"
+      ],
+      "field10_daily_higher_lock": [
+        "timeframe",
+        "completed_candle",
+        "child_run_id",
+        "canonical_run_id",
+        "generation_id",
+        "snapshot_hash"
+      ],
+      "field10_daily_snapshot_symbol": [
+        "timeframe",
+        "parent_run_id",
+        "child_run_id",
+        "generation_id"
+      ],
+      "field10_integrated_evidence_history": [
+        "completed_candle",
+        "generation_id"
+      ],
+      "canonical_symbol_results_20260705": [
+        "completed_candle",
+        "parent_run_id",
+        "child_run_id",
+        "canonical_run_id",
+        "generation_id",
+        "snapshot_hash",
+        "source_id"
+      ],
+      "field11_results_20260705": [
+        "completed_candle",
+        "parent_run_id",
+        "child_run_id",
+        "canonical_run_id",
+        "generation_id",
+        "snapshot_hash",
+        "source_id"
+      ],
+      "field10_daily_snapshot": [
+        "timeframe",
+        "latest_completed_candle",
+        "generation_ids_json"
+      ]
+    },
+    "backup": "backups/multi_symbol_field10_20260701.pre_20260706_timeframe_identity_child_publication_v1.sqlite3",
+    "path": "data/multi_symbol_field10_20260701.sqlite3"
+  },
+  "integrity": "ok",
+  "foreign_key_violations": 0,
+  "new_runtime_tables_empty": {
+    "child_snapshot_publication_20260706": 0,
+    "field2_powerbi_publication_20260706": 0,
+    "field10_shadow_research_validation_20260706": 0
+  },
+  "preserved_legacy_row_counts": {
+    "field10_daily_snapshot": 2,
+    "field10_daily_snapshot_symbol": 5,
+    "field10_integrated_evidence_history": 0
+  }
+}

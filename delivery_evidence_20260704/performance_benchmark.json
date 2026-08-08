@@ -1,0 +1,55 @@
+{
+  "environment": {
+    "python": "3.13.5",
+    "live_api": false,
+    "mt5_live": false,
+    "synthetic_rows": 1600
+  },
+  "quant_metrics": {
+    "runs": 20,
+    "mean_ms": 17.424778249994688,
+    "median_ms": 14.796351499967386,
+    "min_ms": 12.99610399996709,
+    "max_ms": 58.78506199996991
+  },
+  "top15_qualification": {
+    "runs": 20,
+    "mean_ms": 18.56751914999677,
+    "median_ms": 18.410692500083314,
+    "min_ms": 17.642195000007632,
+    "max_ms": 21.578546999990067
+  },
+  "in_session_exact_candle_cache": {
+    "first_status": "FETCHED",
+    "second_status": "EXACT_CANDLE_CACHE_HIT",
+    "provider_calls": 1,
+    "first_ms": 5.534278999903108,
+    "second_ms": 0.538040000037654,
+    "speedup_ratio": 10.285999181317003,
+    "requests_avoided": 1
+  },
+  "persistent_sqlite_cache": {
+    "write": {
+      "runs": 5,
+      "mean_ms": 4.785140799913279,
+      "median_ms": 3.9367619999666204,
+      "min_ms": 3.3536189998812915,
+      "max_ms": 8.458110999981727
+    },
+    "read": {
+      "runs": 20,
+      "mean_ms": 4.264819950003584,
+      "median_ms": 4.172089999997297,
+      "min_ms": 3.667767000024469,
+      "max_ms": 7.2725850000097125
+    }
+  },
+  "migration": {
+    "first_ms": 30.08244200009358,
+    "second_ms": 15.273686000000453,
+    "first_ok": true,
+    "second_ok": true,
+    "second_to_first_ratio": 0.5077275973789941
+  },
+  "claim_note": "Synthetic/local benchmark only. It does not prove a 30\u201350% end-to-end live runtime reduction."
+}

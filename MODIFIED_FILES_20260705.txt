@@ -1,0 +1,23 @@
+MODIFIED EXISTING FILES
+core/app/runner.py
+core/field11_similar_path_simulator_20260702.py
+core/lunch_broker_sentiment_ai_history_20260622.py
+core/multi_symbol_field10_20260701.py
+core/startup_lunch_orchestrator_20260704.py
+core/system_continuous_validation_20260702.py
+data/multi_symbol_field10_20260701.sqlite3
+tabs/antd_page_router_20260615.py
+ui/lunch_field10_multi_symbol_20260701.py
+ui/lunch_field11_similar_path_20260702.py
+ui/lunch_multi_symbol_selector_20260704.py
+ui/multi_symbol_settings_20260701.py
+ui/sidebar_fallback_panel.py
+
+NEW IMPLEMENTATION / TEST FILES
+core/complete_repair_20260705.py
+scripts/migrate_complete_repair_20260705.py
+tests/test_complete_repair_20260705.py
+
+NEW MIGRATED DATA FILES
+data/backups/multi_symbol_field10_20260701.pre_20260705_20260705T081618Z.sqlite3
+data/field11_similar_path_20260702.sqlite3

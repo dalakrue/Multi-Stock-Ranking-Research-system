@@ -1,0 +1,389 @@
+{
+  "file_count": 42,
+  "pass_files": 42,
+  "fail_files": 0,
+  "timeout_files": 0,
+  "reported_passed_tests": 332,
+  "reported_failed_tests": 0,
+  "reported_error_tests": 0,
+  "results": [
+    {
+      "index": 1,
+      "file": "research_quant/tests/test_crcef_sv.py",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/research_quant__tests__test_crcef_sv.py.log"
+    },
+    {
+      "index": 2,
+      "file": "research_quant/tests/test_persistence.py",
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/research_quant__tests__test_persistence.py.log"
+    },
+    {
+      "index": 3,
+      "file": "tests/test_20260627_user_table_contract.py",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_20260627_user_table_contract.py.log"
+    },
+    {
+      "index": 4,
+      "file": "tests/test_20260628_na_regime_dinner_finder_repairs.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_20260628_na_regime_dinner_finder_repairs.py.log"
+    },
+    {
+      "index": 5,
+      "file": "tests/test_20260628_trust_imap_mobile.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_20260628_trust_imap_mobile.py.log"
+    },
+    {
+      "index": 6,
+      "file": "tests/test_arcef_sv.py",
+      "status": "PASS",
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_arcef_sv.py.log"
+    },
+    {
+      "index": 7,
+      "file": "tests/test_arert_thesis_repair_20260628.py",
+      "status": "PASS",
+      "passed": 15,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_arert_thesis_repair_20260628.py.log"
+    },
+    {
+      "index": 8,
+      "file": "tests/test_combined_display_consistency_20260626.py",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_combined_display_consistency_20260626.py.log"
+    },
+    {
+      "index": 9,
+      "file": "tests/test_delivery_acceptance_20260626.py",
+      "status": "PASS",
+      "passed": 20,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_delivery_acceptance_20260626.py.log"
+    },
+    {
+      "index": 10,
+      "file": "tests/test_deployment_runtime_guards_20260702.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_deployment_runtime_guards_20260702.py.log"
+    },
+    {
+      "index": 11,
+      "file": "tests/test_dinner_repair_20260627.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_dinner_repair_20260627.py.log"
+    },
+    {
+      "index": 12,
+      "file": "tests/test_feature_upgrade_20260629.py",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_feature_upgrade_20260629.py.log"
+    },
+    {
+      "index": 13,
+      "file": "tests/test_field10_contracts_20260702.py",
+      "status": "PASS",
+      "passed": 15,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_contracts_20260702.py.log"
+    },
+    {
+      "index": 14,
+      "file": "tests/test_field10_daily_snapshot_contract_20260702.py",
+      "status": "PASS",
+      "passed": 33,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_daily_snapshot_contract_20260702.py.log"
+    },
+    {
+      "index": 15,
+      "file": "tests/test_field10_evidence_heatmap.py",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_evidence_heatmap.py.log"
+    },
+    {
+      "index": 16,
+      "file": "tests/test_field10_integrated_evidence_history.py",
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_integrated_evidence_history.py.log"
+    },
+    {
+      "index": 17,
+      "file": "tests/test_field10_multi_symbol_20260701.py",
+      "status": "PASS",
+      "passed": 13,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_multi_symbol_20260701.py.log"
+    },
+    {
+      "index": 18,
+      "file": "tests/test_field10_rank_columns_migration_20260703.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_rank_columns_migration_20260703.py.log"
+    },
+    {
+      "index": 19,
+      "file": "tests/test_field10_shadow_methods_20260702.py",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_shadow_methods_20260702.py.log"
+    },
+    {
+      "index": 20,
+      "file": "tests/test_field10_table4_publication_bridge.py",
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_table4_publication_bridge.py.log"
+    },
+    {
+      "index": 21,
+      "file": "tests/test_field10_ten_paper_research_20260701.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_ten_paper_research_20260701.py.log"
+    },
+    {
+      "index": 22,
+      "file": "tests/test_field10_upgrade_20260704.py",
+      "status": "PASS",
+      "passed": 17,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_upgrade_20260704.py.log"
+    },
+    {
+      "index": 23,
+      "file": "tests/test_field11_similar_path_simulator_20260702.py",
+      "status": "PASS",
+      "passed": 24,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field11_similar_path_simulator_20260702.py.log"
+    },
+    {
+      "index": 24,
+      "file": "tests/test_field1_publication_bridge_20260626.py",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_publication_bridge_20260626.py.log"
+    },
+    {
+      "index": 25,
+      "file": "tests/test_field1_table1_factor_merge_20260627.py",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_table1_factor_merge_20260627.py.log"
+    },
+    {
+      "index": 26,
+      "file": "tests/test_field1_table5_quant_enrichment.py",
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_table5_quant_enrichment.py.log"
+    },
+    {
+      "index": 27,
+      "file": "tests/test_field3_field10_multi_symbol_sync_20260703.py",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field3_field10_multi_symbol_sync_20260703.py.log"
+    },
+    {
+      "index": 28,
+      "file": "tests/test_field3_regime_lifecycle_monitor_20260701.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_field3_regime_lifecycle_monitor_20260701.py.log"
+    },
+    {
+      "index": 29,
+      "file": "tests/test_five_surface_navigation_20260626.py",
+      "status": "PASS",
+      "passed": 5,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_five_surface_navigation_20260626.py.log"
+    },
+    {
+      "index": 30,
+      "file": "tests/test_full_multi_symbol_repair_20260702.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_full_multi_symbol_repair_20260702.py.log"
+    },
+    {
+      "index": 31,
+      "file": "tests/test_lunch_time_sync_20260629.py",
+      "status": "PASS",
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_lunch_time_sync_20260629.py.log"
+    },
+    {
+      "index": 32,
+      "file": "tests/test_multi_symbol_api_request_deduplication.py",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_multi_symbol_api_request_deduplication.py.log"
+    },
+    {
+      "index": 33,
+      "file": "tests/test_multi_symbol_routing_20260702.py",
+      "status": "PASS",
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_multi_symbol_routing_20260702.py.log"
+    },
+    {
+      "index": 34,
+      "file": "tests/test_priority_repair_20260627.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_priority_repair_20260627.py.log"
+    },
+    {
+      "index": 35,
+      "file": "tests/test_projection_integrity_20260627.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_projection_integrity_20260627.py.log"
+    },
+    {
+      "index": 36,
+      "file": "tests/test_repair_20260628.py",
+      "status": "PASS",
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_repair_20260628.py.log"
+    },
+    {
+      "index": 37,
+      "file": "tests/test_requested_acceptance_20260626.py",
+      "status": "PASS",
+      "passed": 18,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_requested_acceptance_20260626.py.log"
+    },
+    {
+      "index": 38,
+      "file": "tests/test_secondary_symbol_shared_sentiment.py",
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_secondary_symbol_shared_sentiment.py.log"
+    },
+    {
+      "index": 39,
+      "file": "tests/test_session_projection_store_warning_20260626.py",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_session_projection_store_warning_20260626.py.log"
+    },
+    {
+      "index": 40,
+      "file": "tests/test_upgrade_20260626.py",
+      "status": "PASS",
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_upgrade_20260626.py.log"
+    },
+    {
+      "index": 41,
+      "file": "tests/test_user_priority_repair_20260626.py",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_user_priority_repair_20260626.py.log"
+    },
+    {
+      "index": 42,
+      "file": "tests/test_user_repairs_20260628.py",
+      "status": "PASS",
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "log": "delivery_evidence_20260704/pytest_files/tests__test_user_repairs_20260628.py.log"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+ADX Quant Pro final repair — files added or modified relative to the newest uploaded base
+
+ADDED
+core/multi_symbol_completion_contract_20260706.py
+tests/test_final_repair_20260707.py
+FINAL_REPAIR_REPORT_20260707.md
+TEN_ADVANCED_QUANT_RESEARCH_PAPERS_20260707.md
+DETAILED_CODEX_COMMAND_20260707.md
+CHANGED_FILES_FINAL_REPAIR_20260707.txt
+TEST_RESULTS_FINAL_REPAIR_20260707.txt
+SHA256_MANIFEST_FINAL_REPAIR_20260707.json
+
+MODIFIED
+core/child_snapshot_publication_20260706.py
+core/data/deployment_migrations_20260705.py
+core/instant_run_engine_20260705.py
+core/multi_symbol_field10_20260701.py
+core/multi_symbol_load_manager_20260707.py
+core/powerbi_child_bundle_20260706.py
+ui/lunch_field10_multi_symbol_20260701.py
+ui/powerbi_cached_renderer_20260619.py
+data/multi_symbol_field10_20260701.sqlite3  (additive schema migration only)

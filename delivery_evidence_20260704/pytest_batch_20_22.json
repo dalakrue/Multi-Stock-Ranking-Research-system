@@ -1,0 +1,35 @@
+[
+  {
+    "index": 20,
+    "file": "tests/test_field10_table4_publication_bridge.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.775,
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_table4_publication_bridge.py.log"
+  },
+  {
+    "index": 21,
+    "file": "tests/test_field10_ten_paper_research_20260701.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.165,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_ten_paper_research_20260701.py.log"
+  },
+  {
+    "index": 22,
+    "file": "tests/test_field10_upgrade_20260704.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.887,
+    "passed": 16,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_upgrade_20260704.py.log"
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "index": 9,
+    "file": "tests/test_delivery_acceptance_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.8,
+    "passed": 20,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_delivery_acceptance_20260626.py.log"
+  },
+  {
+    "index": 10,
+    "file": "tests/test_deployment_runtime_guards_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.877,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_deployment_runtime_guards_20260702.py.log"
+  },
+  {
+    "index": 11,
+    "file": "tests/test_dinner_repair_20260627.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.203,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_dinner_repair_20260627.py.log"
+  },
+  {
+    "index": 12,
+    "file": "tests/test_feature_upgrade_20260629.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 4.106,
+    "passed": 5,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_feature_upgrade_20260629.py.log"
+  },
+  {
+    "index": 13,
+    "file": "tests/test_field10_contracts_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 5.887,
+    "passed": 15,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_contracts_20260702.py.log"
+  },
+  {
+    "index": 14,
+    "file": "tests/test_field10_daily_snapshot_contract_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.435,
+    "passed": 33,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field10_daily_snapshot_contract_20260702.py.log"
+  }
+]

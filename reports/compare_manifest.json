@@ -1,0 +1,41 @@
+{
+  "modified": [
+    "core/app/runner.py",
+    "core/field11_similar_path_simulator_20260702.py",
+    "core/lunch_broker_sentiment_ai_history_20260622.py",
+    "core/multi_symbol_field10_20260701.py",
+    "core/startup_lunch_orchestrator_20260704.py",
+    "core/system_continuous_validation_20260702.py",
+    "data/multi_symbol_field10_20260701.sqlite3",
+    "tabs/antd_page_router_20260615.py",
+    "ui/lunch_field10_multi_symbol_20260701.py",
+    "ui/lunch_field11_similar_path_20260702.py",
+    "ui/lunch_multi_symbol_selector_20260704.py",
+    "ui/multi_symbol_settings_20260701.py",
+    "ui/sidebar_fallback_panel.py"
+  ],
+  "new": [
+    "CHANGELOG_20260705.md",
+    "DATABASE_MIGRATION_REPORT_20260705.md",
+    "IMPLEMENTATION_ACCEPTANCE_20260705.md",
+    "MODIFIED_FILES_20260705.txt",
+    "REMAINING_LIMITATIONS_20260705.md",
+    "TEST_REPORT_20260705.md",
+    "core/complete_repair_20260705.py",
+    "data/backups/multi_symbol_field10_20260701.pre_20260705_20260705T081618Z.sqlite3",
+    "data/field11_similar_path_20260702.sqlite3",
+    "reports/compare_manifest.json",
+    "reports/database_migration_20260705.json",
+    "reports/test_logs/batch1.txt",
+    "reports/test_logs/batch2.txt",
+    "reports/test_logs/batch3.txt",
+    "reports/test_logs/compileall.txt",
+    "reports/test_logs/migration_stdout.txt",
+    "reports/test_logs/streamlit_apptest.txt",
+    "reports/test_logs/streamlit_smoke.txt",
+    "reports/test_report_20260705.json",
+    "scripts/migrate_complete_repair_20260705.py",
+    "tests/test_complete_repair_20260705.py"
+  ],
+  "deleted": []
+}

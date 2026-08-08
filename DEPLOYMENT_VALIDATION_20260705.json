@@ -1,0 +1,36 @@
+{
+  "build": "ADX_QUANT_PRO_DEPLOYMENT_READY_20260705",
+  "main_streamlit_entry": "app.py",
+  "compatibility_entry": "adx_dashpoard.py",
+  "schema_version": 2026070501,
+  "provider_priority": [
+    "TWELVE_DATA",
+    "MT5",
+    "FINNHUB",
+    "ALPHA_VANTAGE",
+    "LOCAL_VALID_CACHE"
+  ],
+  "compile": "PASS",
+  "imports": {"status": "PASS", "modules": 16},
+  "migrations": {"status": "PASS", "idempotent_runs": 2},
+  "tests": {
+    "status": "PASS",
+    "total_passed": 467,
+    "batches": [209, 157, 101],
+    "failures": 0,
+    "non_failing_warnings": 3
+  },
+  "streamlit": {
+    "headless_start": "PASS",
+    "http_status": 200,
+    "traceback": false,
+    "app_test_exceptions": 0
+  },
+  "default_symbols": [
+    "EURUSD", "USDJPY", "AUDUSD", "GBPUSD", "USDCAD",
+    "USDCHF", "EURJPY", "GBPJPY", "EURGBP", "NZDUSD"
+  ],
+  "default_timeframe": "H1",
+  "supported_operational_timeframes": ["H1", "H4"],
+  "live_external_credentials_tested": false
+}

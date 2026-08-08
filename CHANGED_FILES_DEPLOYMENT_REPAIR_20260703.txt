@@ -1,0 +1,35 @@
+MODIFIED FILES
+core/advanced_analytics_20260615.py
+core/advanced_reliability_shift_20260620.py
+core/adx_shared_sync_20260615.py
+core/causal_quant_support_20260618.py
+core/finnhub_connector.py
+core/lunch_broker_sentiment_ai_history_20260622.py
+core/multiscale_probabilistic_upgrade_20260618.py
+core/powerbi_path_calibration_20260617.py
+core/prediction_ledger_20260617.py
+core/regime_sync_20260617.py
+core/regime_transition_trust_20260621.py
+core/research_calibration_20260618.py
+core/research_risk_stack_20260619.py
+core/settings_run_orchestrator_20260617.py
+core/shared_broker_time_20260622.py
+core/similar_day_intelligence_20260619.py
+core/tail_density_research_20260622.py
+core/ten_paper_research_layers_20260621.py
+core/trust_history_20260619.py
+core/v9_compat_loader.py
+core/ui/legacy_impl/styles_impl.py
+
+ADDED FILES
+DEPLOYMENT_IMPORT_REPAIR_20260703.json
+DEPLOYMENT_INTERNAL_IMPORT_AUDIT_20260703.json
+DEPLOYMENT_WRAPPER_EXTENSION_RESTORE_20260703.json
+DEPLOYMENT_NO_V9_PARTS_SMOKE_20260703.json
+DEPLOYMENT_SECRET_SCAN_20260703.json
+core/canonical_lookup_20260617.py
+core/canonical_runtime_20260617_standalone.py
+ui/lunch_field2_quant_v6_20260622.py
+ui/priority_sync_v9.py
+ui/lunch_field3_validators_v10.py
+ui/lunch_field4_overall_history_20260622.py

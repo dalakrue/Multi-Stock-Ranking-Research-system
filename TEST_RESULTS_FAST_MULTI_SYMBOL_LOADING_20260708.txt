@@ -1,0 +1,28 @@
+Date: 2026-07-08
+
+Compilation:
+PASS - core/data/market_data_orchestrator.py
+PASS - core/data/multi_symbol_scheduler.py
+PASS - core/multi_symbol_load_manager_20260707.py
+PASS - ui/multi_symbol_settings_20260701.py
+PASS - tests/test_fast_multi_symbol_loading_20260708.py
+
+Focused regression command result:
+56 passed, 3 warnings in 16.41s
+
+Included suites:
+- tests/test_fast_multi_symbol_loading_20260708.py
+- tests/test_provider_selector_capacity_20260708.py
+- tests/test_adaptive_cumulative_selector_repair_20260707.py
+- tests/test_load_first_generation_fix_20260707.py
+- tests/test_settings_h4_autoconnect_quota_20260706.py
+- tests/test_multi_symbol_routing_20260702.py
+- tests/test_full_multi_symbol_repair_20260702.py
+- tests/test_field10_multi_symbol_20260701.py
+- tests/test_field3_field10_multi_symbol_sync_20260703.py
+
+Warnings:
+Three existing sklearn single-label confusion-matrix warnings in multi-symbol routing tests. No test failure.
+
+Environment limitation:
+A separate legacy test importing Streamlit could not be collected because Streamlit is not installed in this sandbox. This is a missing test-runtime dependency, not a failure in the changed loader modules. The changed UI source compiled successfully.

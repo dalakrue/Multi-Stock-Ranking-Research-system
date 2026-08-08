@@ -1,0 +1,136 @@
+{
+  "build": "ADX_QUANT_PRO_MULTI_SYMBOL_FULLY_REPAIRED_20260702",
+  "generated_date": "2026-07-02",
+  "files": [
+    {
+      "path": "core/buy_sell_frequency_20260629.py",
+      "bytes": 6121,
+      "sha256": "f7dfa786f7b1ba55082ef4956e5978b1124523d3fc2705e8c596ae433b0a3d14"
+    },
+    {
+      "path": "core/field10_adaptive_regime_metrics_20260702.py",
+      "bytes": 10664,
+      "sha256": "f685bd96b6b805480ec3abd70908fa5af1200f79de2b948e5a6744c964c3333a"
+    },
+    {
+      "path": "core/field10_daily_snapshot_contract_20260702.py",
+      "bytes": 107182,
+      "sha256": "19c19cc9266099cc8e1d9c571339c8cc10e2b1015a8302202abe6fff77328287"
+    },
+    {
+      "path": "core/field11_similar_path_simulator_20260702.py",
+      "bytes": 78918,
+      "sha256": "7f8e8c0e9e1e587f0480ce17c8079d6b61458c9fe8c909e73e06c11013a4c6dc"
+    },
+    {
+      "path": "core/multi_symbol_field10_20260701.py",
+      "bytes": 96646,
+      "sha256": "db60b049df73f0a6f86a6bd0f99d1c7af4f7dabae59861ec8c7fbeab03305e2c"
+    },
+    {
+      "path": "core/session_context_20260625.py",
+      "bytes": 8213,
+      "sha256": "b0bb40344a63b8d0863c247bebf834668f3df690d7eff0179445672dcb5fa3a0"
+    },
+    {
+      "path": "core/system_continuous_validation_20260702.py",
+      "bytes": 14910,
+      "sha256": "70ce51240c4cae6b329e6bcf316df87b700f748dc123c38cc59a297568d47d89"
+    },
+    {
+      "path": "tabs/antd_page_router_20260615.py",
+      "bytes": 72976,
+      "sha256": "9b58d3be232e979cb6561c4e49357f08ff643ad209b9f1cd997e0b766a73f82c"
+    },
+    {
+      "path": "tests/test_full_multi_symbol_repair_20260702.py",
+      "bytes": 6583,
+      "sha256": "6e4e231b7188ff131a6e0ce7719f5d0e7d6545393d4fc68ec96b658fae409517"
+    },
+    {
+      "path": "ui/global_symbol_selector_20260629.py",
+      "bytes": 1576,
+      "sha256": "86ce9a8d371dd17c2722fd4d9c8b7a4d89ec49ee2480fb28affe9791e1e969a5"
+    },
+    {
+      "path": "ui/lunch_field10_multi_symbol_20260701.py",
+      "bytes": 60921,
+      "sha256": "0f554298e2b92c18a0e6815ac6a8cf7585cd026c5fb3aa32ccf7dd085bd4146a"
+    },
+    {
+      "path": "ui/lunch_field11_similar_path_20260702.py",
+      "bytes": 24462,
+      "sha256": "c05dd12519729b9931a312384637e26c5eba17dde8d33027b8bc4131830ace73"
+    },
+    {
+      "path": "ui/lunch_field2_saved_path_v13.py",
+      "bytes": 20743,
+      "sha256": "8b1c46ddb57256d31d25244e022b51ee936138dd68028c379c46205f6f2270c7"
+    },
+    {
+      "path": "ui/lunch_four_core_fields_20260619.py",
+      "bytes": 105336,
+      "sha256": "9994192dd63834129a6960d6a9d4cfb1e3e97ddd6a4c20945ff6947b50507797"
+    },
+    {
+      "path": "ui/multi_symbol_settings_20260701.py",
+      "bytes": 10182,
+      "sha256": "15da052ba8fe1a9ec4525ec0223ae142b3cda8e43dcde92c861934be3d1715e9"
+    },
+    {
+      "path": "ui/powerbi_cached_renderer_20260619.py",
+      "bytes": 63399,
+      "sha256": "0a0125de02465ef6a2338f5b42f9526f86c379855185f6b56b7775ea414d58a2"
+    },
+    {
+      "path": "ui/sidebar_fallback_panel.py",
+      "bytes": 20875,
+      "sha256": "a85bd7dc1ecf7f2eb1cc79dd0a21561ea136b83cbbd1c8b4a1efdb659184d927"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/CHANGED_FILES.txt",
+      "bytes": 698,
+      "sha256": "69c790517fe5edf2fc89357b117799ea06e9a6a1d998d2e045a19d3c2e216365"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/FINAL_READ_ME_FIRST.md",
+      "bytes": 1687,
+      "sha256": "65b84f52ba2479a58ec746fd7c38311b2b4acb876d2fd95684effc58647ead40"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/IMPLEMENTATION_REPORT.md",
+      "bytes": 6537,
+      "sha256": "2a7da405dd76407b362590470707274287eabcd2aea1926271f951476bbba8ab"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/MASTER_COMMAND_TO_COMMAND_CHATGPT.txt",
+      "bytes": 8819,
+      "sha256": "01258e40f302c0c754ccea3df55e3499cd7f24d97765e8159ff55c84508a7e3a"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/PATCH_DIFF_STATS.txt",
+      "bytes": 878,
+      "sha256": "d39f10ae702888dd900e83e5b1b95ab731194c708d2072d0c718569d16ef6d08"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/RUN_AND_VERIFY_LINUX.sh",
+      "bytes": 461,
+      "sha256": "9962ad571fd512d98230a80e8b2a79205b4d195f205ef0decb8aabee25081f2c"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/RUN_AND_VERIFY_WINDOWS.ps1",
+      "bytes": 536,
+      "sha256": "c7c9c7172c3fa38ea61435f8aaabe6800df1728c96007c087990f50ef5e3d2d1"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/TEN_ADVANCED_QUANT_RESEARCH_RECOMMENDATIONS.md",
+      "bytes": 9857,
+      "sha256": "821ddc5e2cf0c8c4b58d7d71820b5f3964a71add801856b07a279d305104dcd3"
+    },
+    {
+      "path": "DELIVERY_20260702_MULTI_SYMBOL_FULL_REPAIR/TEST_REPORT.md",
+      "bytes": 1916,
+      "sha256": "4597bf1dc6aed4b799be636b4d059c90a41d3a63a62cfb85285329a75e353b43"
+    }
+  ]
+}

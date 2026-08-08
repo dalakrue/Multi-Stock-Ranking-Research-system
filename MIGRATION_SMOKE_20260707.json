@@ -1,0 +1,45 @@
+{
+  "legacy_sha256": "9d05229734feaf39799f227552fa2d5285708fc461b87a6b117589e5b6eb3e71",
+  "first_ok": true,
+  "second_ok": true,
+  "idempotent_version": true,
+  "required_tables_present": true,
+  "current_selection_count": 18,
+  "current_timeframes": [
+    "H4"
+  ],
+  "restored_order": {
+    "first": [
+      "AUDUSD",
+      "USDCAD",
+      "USDCHF",
+      "EURJPY",
+      "GBPJPY",
+      "EURGBP"
+    ],
+    "second": [
+      "NZDUSD",
+      "EURCHF",
+      "EURAUD",
+      "EURCAD",
+      "EURNZD",
+      "GBPCHF"
+    ],
+    "third": [
+      "GBPAUD",
+      "GBPCAD",
+      "AUDJPY",
+      "XAUUSD",
+      "XAGUSD",
+      "NAS100"
+    ],
+    "normalized": true
+  },
+  "migration_versions": [
+    [
+      2026070704,
+      "31dae26a5184a6060f99ae9eccab246882cde5ca4fde7835fb1a9e4daa63f5f2"
+    ]
+  ],
+  "database_size": 5464064
+}

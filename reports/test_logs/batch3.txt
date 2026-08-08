@@ -1,0 +1,11 @@
+........................................................................ [ 83%]
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/test_multi_symbol_routing_20260702.py::test_field3_publishes_for_non_eurusd_main_symbol
+tests/test_multi_symbol_routing_20260702.py::test_field3_publishes_for_non_eurusd_main_symbol
+tests/test_multi_symbol_routing_20260702.py::test_field3_publishes_for_non_eurusd_main_symbol
+  /opt/pyvenv/lib/python3.13/site-packages/sklearn/metrics/_classification.py:620: UserWarning: A single label was found in 'y_true' and 'y_pred'. For the confusion matrix to have the correct shape, use the 'labels' parameter to pass all known labels.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+86 passed, 3 warnings in 9.62s

@@ -1,0 +1,14 @@
+Added:
+- core/field10_fast_lane_20260709.py
+- FIELD10_FAST_LANE_REPAIR_20260709.md
+- CHANGED_FILES_FIELD10_FAST_LANE_20260709.txt
+
+Modified:
+- tabs/antd_page_router_20260615.py
+- core/settings_run_orchestrator_20260617.py
+- core/multi_symbol_field10_20260701.py
+
+Purpose:
+- Super Quick now prioritizes Field 10 production output.
+- Quick/Full now own the heavier deferred Lunch/AI/Field 11/research calculations.
+- Deferred work is recorded with DEFERRED_TO_QUICK_RUN status instead of being silently skipped.

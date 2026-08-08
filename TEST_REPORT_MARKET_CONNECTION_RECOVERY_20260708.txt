@@ -1,0 +1,19 @@
+Market Connection Recovery Repair — Test Report
+Date: 2026-07-08
+
+Compile validation:
+  python -m compileall -q -j 4 core ui tabs tests app.py adx_dashpoard.py
+  RESULT: PASS
+
+Focused regression validation:
+  PYTHONPATH=. pytest -q \
+    tests/test_market_data_recovery_20260708.py \
+    tests/test_fast_multi_symbol_loading_20260708.py \
+    tests/test_deployment_readiness_upgrade_20260705.py::test_provider_priority_is_finnhub_active_and_twelve_first_fallback \
+    tests/test_deployment_readiness_upgrade_20260705.py::test_successful_finnhub_primary_skips_all_fallback_providers
+
+  RESULT: 12 passed in 0.88s
+
+Network limitation of build environment:
+  Live external API calls were not executed from the build container because outbound DNS/network access was unavailable.
+  The live Yahoo/Finnhub response paths were validated with deterministic HTTP response fixtures and existing connector regression tests.

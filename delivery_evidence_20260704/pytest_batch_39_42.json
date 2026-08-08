@@ -1,0 +1,46 @@
+[
+  {
+    "index": 39,
+    "file": "tests/test_session_projection_store_warning_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.755,
+    "passed": 1,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_session_projection_store_warning_20260626.py.log"
+  },
+  {
+    "index": 40,
+    "file": "tests/test_upgrade_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.828,
+    "passed": 6,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_upgrade_20260626.py.log"
+  },
+  {
+    "index": 41,
+    "file": "tests/test_user_priority_repair_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.76,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_user_priority_repair_20260626.py.log"
+  },
+  {
+    "index": 42,
+    "file": "tests/test_user_repairs_20260628.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.67,
+    "passed": 7,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_user_repairs_20260628.py.log"
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "index": 23,
+    "file": "tests/test_field11_similar_path_simulator_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 21.982,
+    "passed": 24,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field11_similar_path_simulator_20260702.py.log"
+  },
+  {
+    "index": 24,
+    "file": "tests/test_field1_publication_bridge_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.101,
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_publication_bridge_20260626.py.log"
+  },
+  {
+    "index": 25,
+    "file": "tests/test_field1_table1_factor_merge_20260627.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.887,
+    "passed": 1,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_table1_factor_merge_20260627.py.log"
+  },
+  {
+    "index": 26,
+    "file": "tests/test_field1_table5_quant_enrichment.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.703,
+    "passed": 2,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field1_table5_quant_enrichment.py.log"
+  },
+  {
+    "index": 27,
+    "file": "tests/test_field3_field10_multi_symbol_sync_20260703.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.969,
+    "passed": 5,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field3_field10_multi_symbol_sync_20260703.py.log"
+  }
+]

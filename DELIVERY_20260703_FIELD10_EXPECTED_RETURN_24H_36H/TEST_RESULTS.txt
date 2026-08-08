@@ -1,0 +1,15 @@
+Field 10 Expected Return 24H / 36H validation
+Date: 2026-07-03
+
+PASS - Python compilation of every modified core/UI module.
+PASS - 91 Field 10 / Field 3 sync regression tests.
+PASS - Streamlit application health endpoint returned: ok.
+PASS - Streamlit AppTest executed app.py with 0 exceptions.
+PASS - Pinned Field 10 table AppTest executed with 0 exceptions.
+PASS - SQLite PRAGMA integrity_check returned: ok.
+PASS - SQLite foreign_key_check returned 0 issues.
+PASS - Required columns exist in all four Field 10 persistence tables.
+PASS - Migration idempotence: second run backfilled 0 rows.
+PASS - Exact-symbol guard prevents EURUSD evidence from filling USDJPY/GBPJPY/XAUUSD.
+PASS - Historical cutoff guard prevents future H1 candles from entering old snapshot calculations.
+PASS - Settings publisher and Lunch loader reference the same v2 migration.

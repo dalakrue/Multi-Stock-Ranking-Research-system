@@ -1,0 +1,16 @@
+Multi-Symbol Global Repair Test Report
+Date: 2026-07-22
+
+Focused command:
+pytest -q tests/test_multisymbol_global_repair_20260722.py tests/test_canonical_symbol_selector_20260709.py tests/test_instant_run_engine_20260705.py tests/test_reliable_quant_contract_20260717.py tests/test_reliable_h4_field12_field13_20260717.py
+
+Result:
+29 passed in 0.77s
+
+Compile checks:
+- core/ai_canonical_intents_v10.py: PASS
+- tests/test_multisymbol_global_repair_20260722.py: PASS
+- Earlier project-wide compileall after the repair: PASS
+
+Full-suite note:
+The complete legacy collection was not clean in this container because Streamlit is not installed and several unrelated pre-existing tests fail against old selector/provider/minimum-row assumptions. No claim of a fully passing historical suite is made.

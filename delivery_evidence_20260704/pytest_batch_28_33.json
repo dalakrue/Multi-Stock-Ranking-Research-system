@@ -1,0 +1,68 @@
+[
+  {
+    "index": 28,
+    "file": "tests/test_field3_regime_lifecycle_monitor_20260701.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 8.916,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_field3_regime_lifecycle_monitor_20260701.py.log"
+  },
+  {
+    "index": 29,
+    "file": "tests/test_five_surface_navigation_20260626.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 2.668,
+    "passed": 5,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_five_surface_navigation_20260626.py.log"
+  },
+  {
+    "index": 30,
+    "file": "tests/test_full_multi_symbol_repair_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.099,
+    "passed": 8,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_full_multi_symbol_repair_20260702.py.log"
+  },
+  {
+    "index": 31,
+    "file": "tests/test_lunch_time_sync_20260629.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.45,
+    "passed": 6,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_lunch_time_sync_20260629.py.log"
+  },
+  {
+    "index": 32,
+    "file": "tests/test_multi_symbol_api_request_deduplication.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 3.762,
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_multi_symbol_api_request_deduplication.py.log"
+  },
+  {
+    "index": 33,
+    "file": "tests/test_multi_symbol_routing_20260702.py",
+    "status": "PASS",
+    "exit_code": 0,
+    "duration_seconds": 8.701,
+    "passed": 3,
+    "failed": 0,
+    "errors": 0,
+    "log": "delivery_evidence_20260704/pytest_files/tests__test_multi_symbol_routing_20260702.py.log"
+  }
+]

@@ -1,0 +1,102 @@
+{
+  "first_run": {
+    "ok": true,
+    "status": "PASS",
+    "path": "data/multi_symbol_field10_20260701.sqlite3",
+    "migration_version": "field10-unified-rank-columns-20260703-v2",
+    "missing_columns": {},
+    "backfilled_rows": {
+      "snapshot_risk24": 1,
+      "snapshot_return12": 2,
+      "snapshot_return24": 2,
+      "snapshot_return36": 2,
+      "local_symbol_calculations": 2
+    },
+    "table_counts": {
+      "field10_hourly_quality": 0,
+      "field10_daily_higher_lock": 0,
+      "field10_daily_snapshot_symbol": 5,
+      "field10_integrated_evidence_history": 0
+    },
+    "non_null_counts": {
+      "field10_hourly_quality": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      },
+      "field10_daily_higher_lock": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      },
+      "field10_daily_snapshot_symbol": {
+        "transition_risk_24h": 3,
+        "expected_return_12h": 2,
+        "expected_return_24h": 2,
+        "expected_return_36h": 2
+      },
+      "field10_integrated_evidence_history": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      }
+    },
+    "sync_conflict_count": 0,
+    "integrity_check": "ok",
+    "foreign_key_issue_count": 0,
+    "applied_at": "2026-07-03T12:45:13.519938+00:00"
+  },
+  "idempotence_run": {
+    "ok": true,
+    "status": "PASS",
+    "path": "data/multi_symbol_field10_20260701.sqlite3",
+    "migration_version": "field10-unified-rank-columns-20260703-v2",
+    "missing_columns": {},
+    "backfilled_rows": {
+      "snapshot_risk24": 0,
+      "snapshot_return12": 0,
+      "snapshot_return24": 0,
+      "snapshot_return36": 0,
+      "local_symbol_calculations": 0
+    },
+    "table_counts": {
+      "field10_hourly_quality": 0,
+      "field10_daily_higher_lock": 0,
+      "field10_daily_snapshot_symbol": 5,
+      "field10_integrated_evidence_history": 0
+    },
+    "non_null_counts": {
+      "field10_hourly_quality": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      },
+      "field10_daily_higher_lock": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      },
+      "field10_daily_snapshot_symbol": {
+        "transition_risk_24h": 3,
+        "expected_return_12h": 2,
+        "expected_return_24h": 2,
+        "expected_return_36h": 2
+      },
+      "field10_integrated_evidence_history": {
+        "transition_risk_24h": 0,
+        "expected_return_12h": 0,
+        "expected_return_24h": 0,
+        "expected_return_36h": 0
+      }
+    },
+    "sync_conflict_count": 0,
+    "integrity_check": "ok",
+    "foreign_key_issue_count": 0,
+    "applied_at": "2026-07-03T12:45:13.555792+00:00"
+  }
+}
